@@ -1360,6 +1360,9 @@ def optimize_gap_filling_moves(day_routes, visit_df, time_matrix_all, o2_idx, sh
 
     current_time = first_visit_arrival
     prev_matrix_idx = shacho_idx
+    lunch_added_gap = False  # 昼休みを追加したかどうか
+    lunch_start_time_gap = datetime.combine(datetime.today(),
+                                            datetime.strptime(f"{LUNCH_START_HOUR}:{LUNCH_START_MINUTE}", "%H:%M").time())
 
     # きたえるーむ直前まで処理
     for i, visit_idx in enumerate(route_with_kitaeroom):
@@ -1384,6 +1387,11 @@ def optimize_gap_filling_moves(day_routes, visit_df, time_matrix_all, o2_idx, sh
             departure = arrival + timedelta(minutes=MEETING_DURATION + stay_duration)
         else:
             departure = arrival + timedelta(minutes=stay_duration)
+
+        # 昼休みの判定：11:30を過ぎたら60分追加（1回だけ）
+        if not lunch_added_gap and departure >= lunch_start_time_gap:
+            departure = departure + timedelta(minutes=LUNCH_DURATION)
+            lunch_added_gap = True
 
         current_time = departure
         prev_matrix_idx = visit_matrix_idx

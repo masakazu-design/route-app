@@ -125,7 +125,7 @@ WORK_HOURS_PER_DAY = 8.0
 
 # 移動時間バイアス設定
 TRAVEL_TIME_BIAS_BASE = 1.10  # 通常時: +10%余裕
-TRAVEL_TIME_BIAS_WINTER = 1.10  # 冬季追加: +10%（合計で約1.21倍）
+TRAVEL_TIME_BIAS_WINTER = 1.50  # 冬季: +50%（積雪・凍結考慮）
 WINTER_MONTHS = [12, 1, 2, 3]  # 冬季月（12月〜3月）
 
 # 対象レイヤー（表記ゆれ対応）
@@ -550,12 +550,11 @@ def fetch_data_from_mymap(map_id):
 def get_travel_time_bias():
     """現在の月に基づいて移動時間バイアスを計算"""
     current_month = datetime.now().month
-    bias = TRAVEL_TIME_BIAS_BASE  # 基本バイアス（+10%）
 
     if current_month in WINTER_MONTHS:
-        bias *= TRAVEL_TIME_BIAS_WINTER  # 冬季は追加バイアス（合計約+21%）
-
-    return bias
+        return TRAVEL_TIME_BIAS_WINTER  # 冬季: +50%
+    else:
+        return TRAVEL_TIME_BIAS_BASE  # 通常: +10%
 
 
 def create_distance_matrix_google_batched(locations_tuple, api_key, progress_callback=None):

@@ -1919,8 +1919,8 @@ if map_df is not None and len(map_df) > 0:
                     if i < len(result_selected_df):
                         row = result_selected_df.iloc[i]
                         name = row[result_name_col] if result_name_col else f"訪問先{i+1}"
-                        lat = row["latitude"]
-                        lon = row["longitude"]
+                        lat = row["lat"]
+                        lon = row["lon"]
                         nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
                         st.markdown(f"**{nav_order}. {name}** - [📍 ナビを開く]({nav_url})")
                         nav_order += 1

@@ -315,10 +315,15 @@ def is_same_location(name1, name2):
 
 
 def is_fixed_location(location_name):
-    """固定ロケーションかどうかを判定（O2本社、藤沢倉庫、きたえるーむ等）"""
+    """Gap Fillingで追加される固定ロケーションかどうかを判定
+    O2本社、藤沢倉庫のみ（これらは打ち合わせ不要）
+    きたえるーむ、O2戸澤、吉田工務店、旧本社は通常訪問先として扱う
+    """
     name = str(location_name)
-    for key in FIXED_LOCATIONS.keys():
-        if key in name:
+    # Gap Fillingで追加されるロケーションのみ（打ち合わせ不要）
+    gap_fill_locations = ["O2本社", "藤沢倉庫"]
+    for loc in gap_fill_locations:
+        if loc in name:
             return True
     return False
 

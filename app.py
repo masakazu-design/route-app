@@ -2537,7 +2537,7 @@ if map_df is not None and len(map_df) > 0:
 
         # 各日の訪問先名とインデックスのマッピングを作成
         global_name_to_idx = {}
-        multi_container_items = {}
+        multi_container_items = []  # list[dict] 形式
 
         for day_idx in range(result_num_days):
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
@@ -2549,7 +2549,10 @@ if map_df is not None and len(map_df) > 0:
                     name = f"訪問先{idx + 1}"
                 day_items.append(name)
                 global_name_to_idx[name] = idx
-            multi_container_items[f"{day_idx + 1}日目"] = day_items
+            multi_container_items.append({
+                "header": f"{day_idx + 1}日目",
+                "items": day_items
+            })
 
         # マルチコンテナでドラッグ＆ドロップ（日程間移動対応）
         sorted_multi = sort_items(multi_container_items, multi_containers=True, key="multi_day_sort")
@@ -2567,8 +2570,8 @@ if map_df is not None and len(map_df) > 0:
             kitaeroom_adjusted = False
 
             for day_idx in range(result_num_days):
-                day_key = f"{day_idx + 1}日目"
-                day_names = sorted_multi.get(day_key, [])
+                day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
+                day_names = day_data.get("items", [])
                 day_indices = [global_name_to_idx[name] for name in day_names if name in global_name_to_idx]
 
                 # きたえるーむが含まれている場合、最後に移動

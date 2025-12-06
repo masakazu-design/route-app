@@ -1773,9 +1773,6 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                         if restaurants:
                             restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
-                # 周辺飲食店検索URL
-                lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{prev_lat},{prev_lon},15z"
-
                 timetable.append({
                     "順番": "🍽️",
                     "場所名": restaurant_name,
@@ -1784,7 +1781,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "滞在時間(分)": actual_lunch_duration,
                     "移動時間(分)": move_time_min,
                     "待機時間(分)": 0,
-                    "備考": f"[📍周辺を検索]({lunch_search_url})"
+                    "備考": "昼食休憩"
                 })
                 calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
                 total_stay_minutes += actual_lunch_duration
@@ -1959,9 +1956,6 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     if restaurants:
                         restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
-            # 周辺飲食店検索URL
-            lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{last_lat},{last_lon},15z"
-
             timetable.append({
                 "順番": "🍽️",
                 "場所名": restaurant_name,
@@ -1970,7 +1964,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 "滞在時間(分)": actual_lunch_duration,
                 "移動時間(分)": last_to_shacho_min,
                 "待機時間(分)": 0,
-                "備考": f"[📍周辺を検索]({lunch_search_url})"
+                "備考": "昼食休憩"
             })
             calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
             total_stay_minutes += actual_lunch_duration
@@ -2840,6 +2834,8 @@ if map_df is not None and len(map_df) > 0:
 
                 # 訪問先
                 nav_order = 3
+                last_visit_lat = SHACHO_HOME["lat"]  # 昼食検索用（デフォルトは社長宅）
+                last_visit_lon = SHACHO_HOME["lon"]
                 for i in visit_indices:
                     if i < len(result_selected_df):
                         row = result_selected_df.iloc[i]
@@ -2849,6 +2845,12 @@ if map_df is not None and len(map_df) > 0:
                         nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
                         st.markdown(f"**{nav_order}. {name}** - [📍 ナビを開く]({nav_url})")
                         nav_order += 1
+                        last_visit_lat = lat
+                        last_visit_lon = lon
+
+                # 昼食休憩（周辺検索）
+                lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{last_visit_lat},{last_visit_lon},15z"
+                st.markdown(f"**🍽️ 昼食休憩** - [🔍 周辺のお店を検索]({lunch_search_url})")
 
                 # 社長宅（送り届け）
                 shacho_drop_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"

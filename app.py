@@ -1901,39 +1901,6 @@ if map_df is not None and len(map_df) > 0:
             timetable_df = timetable_df[existing_cols]
             st.dataframe(timetable_df, use_container_width=True)
 
-            # ========================================
-            # ドライバー向けナビリンク
-            # ========================================
-            with st.expander("🚗 ナビで開く（タップで案内開始）", expanded=False):
-                # O2本社
-                o2_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
-                st.markdown(f"**1. {O2_HONSHA['name']}（出発）** - [📍 ナビを開く]({o2_nav_url})")
-
-                # 社長宅
-                shacho_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
-                st.markdown(f"**2. {SHACHO_HOME['name']}（ピックアップ）** - [📍 ナビを開く]({shacho_nav_url})")
-
-                # 訪問先
-                nav_order = 3
-                for i in visit_indices:
-                    if i < len(result_selected_df):
-                        row = result_selected_df.iloc[i]
-                        name = row[result_name_col] if result_name_col else f"訪問先{i+1}"
-                        lat = row["lat"]
-                        lon = row["lon"]
-                        nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
-                        st.markdown(f"**{nav_order}. {name}** - [📍 ナビを開く]({nav_url})")
-                        nav_order += 1
-
-                # 社長宅（送り届け）
-                shacho_drop_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
-                st.markdown(f"**{nav_order}. {SHACHO_HOME['name']}（送り届け）** - [📍 ナビを開く]({shacho_drop_url})")
-                nav_order += 1
-
-                # O2本社（帰着）
-                o2_return_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
-                st.markdown(f"**{nav_order}. {O2_HONSHA['name']}（帰着）** - [📍 ナビを開く]({o2_return_url})")
-
         # ========================================
         # 手動調整UI
         # ========================================
@@ -2154,6 +2121,46 @@ if map_df is not None and len(map_df) > 0:
         line_count = full_calendar.count('\n') + 1
         dynamic_height = max(200, line_count * 22 + 50)
         st.text_area("", full_calendar, height=dynamic_height)
+
+        # ========================================
+        # ドライバー向けナビリンク
+        # ========================================
+        st.subheader("🚗 ナビで開く（タップで案内開始）")
+        st.info("各訪問先をタップするとGoogleマップのナビが起動します")
+
+        for day_num in range(1, result_num_days + 1):
+            day_idx = day_num - 1
+            visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
+
+            with st.expander(f"📅 Day {day_num} のナビリンク", expanded=False):
+                # O2本社
+                o2_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
+                st.markdown(f"**1. {O2_HONSHA['name']}（出発）** - [📍 ナビを開く]({o2_nav_url})")
+
+                # 社長宅
+                shacho_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
+                st.markdown(f"**2. {SHACHO_HOME['name']}（ピックアップ）** - [📍 ナビを開く]({shacho_nav_url})")
+
+                # 訪問先
+                nav_order = 3
+                for i in visit_indices:
+                    if i < len(result_selected_df):
+                        row = result_selected_df.iloc[i]
+                        name = row[result_name_col] if result_name_col else f"訪問先{i+1}"
+                        lat = row["lat"]
+                        lon = row["lon"]
+                        nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
+                        st.markdown(f"**{nav_order}. {name}** - [📍 ナビを開く]({nav_url})")
+                        nav_order += 1
+
+                # 社長宅（送り届け）
+                shacho_drop_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
+                st.markdown(f"**{nav_order}. {SHACHO_HOME['name']}（送り届け）** - [📍 ナビを開く]({shacho_drop_url})")
+                nav_order += 1
+
+                # O2本社（帰着）
+                o2_return_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
+                st.markdown(f"**{nav_order}. {O2_HONSHA['name']}（帰着）** - [📍 ナビを開く]({o2_return_url})")
 
         # 地図表示
         st.subheader("🗺️ 全日程ルート地図")

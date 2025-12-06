@@ -1550,9 +1550,13 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         if sim_first_arrival < sim_min_arrival:
             sim_first_arrival = sim_min_arrival
 
-        # きたえるーむまでの時間を計算
+        # きたえるーむまでの時間を計算（昼休みも考慮）
         sim_time = sim_first_arrival
         prev_matrix_idx = shacho_idx
+        lunch_added = False  # 昼休みを追加したかどうか
+        lunch_start_time = datetime.combine(datetime.today(),
+                                            datetime.strptime(f"{LUNCH_START_HOUR}:{LUNCH_START_MINUTE}", "%H:%M").time())
+
         for idx, visit_idx in enumerate(filtered_visit_indices):
             if name_col:
                 pname = visit_df.iloc[visit_idx][name_col]
@@ -1569,6 +1573,11 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             else:
                 travel = time_matrix_all[prev_matrix_idx][visit_matrix_idx]
                 sim_time = sim_time + timedelta(seconds=travel) + timedelta(minutes=pstay)
+
+            # 昼休みの判定：11:30を過ぎたら60分追加（1回だけ）
+            if not lunch_added and sim_time >= lunch_start_time:
+                sim_time = sim_time + timedelta(minutes=LUNCH_DURATION)
+                lunch_added = True
 
             prev_matrix_idx = visit_matrix_idx
 

@@ -1269,36 +1269,48 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
 
         skip_lunch_for_same_location = is_same_location(prev_point_name, point_name)
 
-        if not lunch_inserted and current_time >= lunch_check_time and i > 0 and not skip_lunch_for_same_location:
-            # 昼食終了時刻は次の訪問先到着時刻に合わせる（移動時間を考慮）
-            # arrival = current_time + travel_time なので、昼食後の到着時刻を計算
-            lunch_end = arrival  # 次の訪問先への到着時刻
-            lunch_start = lunch_end - timedelta(minutes=LUNCH_DURATION)
+        # 昼食挿入条件：到着時刻が11:30以降、または移動中に11:30を跨ぐ場合
+        should_insert_lunch = (
+            not lunch_inserted and
+            i > 0 and
+            not skip_lunch_for_same_location and
+            arrival >= lunch_check_time  # 到着時刻が11:30以降
+        )
 
-            prev_visit_idx = filtered_visit_indices[i - 1]
-            prev_lat = visit_df.iloc[prev_visit_idx]["lat"]
-            prev_lon = visit_df.iloc[prev_visit_idx]["lon"]
+        if should_insert_lunch:
+            # 昼食終了時刻は次の訪問先到着時刻に合わせる
+            lunch_end = arrival
+            # 昼食開始時刻 = 前の訪問終了時刻（current_time）以降
+            lunch_start = max(current_time, lunch_end - timedelta(minutes=LUNCH_DURATION))
 
-            restaurant_name = "昼食休憩"
-            if api_key:
-                restaurants, _ = find_nearby_restaurant(prev_lat, prev_lon, api_key)
-                if restaurants:
-                    restaurant_name = f"昼食：{restaurants[0]['name']}"
+            # 実際の昼食時間（移動時間が短い場合は短縮される可能性）
+            actual_lunch_duration = int((lunch_end - lunch_start).total_seconds() / 60)
 
-            timetable.append({
-                "順番": "🍽️",
-                "場所名": restaurant_name,
-                "到着時刻": format_time(lunch_start),
-                "出発時刻": format_time(lunch_end),
-                "滞在時間(分)": LUNCH_DURATION,
-                "移動時間(分)": 0,
-                "待機時間(分)": 0,
-                "備考": "昼食休憩"
-            })
-            calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({LUNCH_DURATION}分) {restaurant_name}")
-            total_stay_minutes += LUNCH_DURATION
+            # 昼食時間が30分以上確保できる場合のみ挿入
+            if actual_lunch_duration >= 30:
+                prev_visit_idx = filtered_visit_indices[i - 1]
+                prev_lat = visit_df.iloc[prev_visit_idx]["lat"]
+                prev_lon = visit_df.iloc[prev_visit_idx]["lon"]
 
-            # current_timeは更新しない（arrivalはすでに計算済み）
+                restaurant_name = "昼食休憩"
+                if api_key:
+                    restaurants, _ = find_nearby_restaurant(prev_lat, prev_lon, api_key)
+                    if restaurants:
+                        restaurant_name = f"昼食：{restaurants[0]['name']}"
+
+                timetable.append({
+                    "順番": "🍽️",
+                    "場所名": restaurant_name,
+                    "到着時刻": format_time(lunch_start),
+                    "出発時刻": format_time(lunch_end),
+                    "滞在時間(分)": actual_lunch_duration,
+                    "移動時間(分)": 0,
+                    "待機時間(分)": 0,
+                    "備考": "昼食休憩"
+                })
+                calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({actual_lunch_duration}分) {restaurant_name}")
+                total_stay_minutes += actual_lunch_duration
+
             lunch_inserted = True
 
         # 訪問先の処理

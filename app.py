@@ -1518,9 +1518,11 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
     o2_to_shacho_time = time_matrix_all[o2_idx][shacho_idx]
 
     # ============================================
-    # きたえるーむがある場合、待機時間を事前計算して出発を遅らせる
+    # きたえるーむがある場合、17:00固定到着になるよう出発時刻を調整
+    # - 早く着く場合 → 出発を遅らせる
+    # - 遅く着く場合 → 出発を繰り上げる
     # ============================================
-    kitaeroom_wait_adjustment = 0  # きたえるーむ待機による出発遅延（分）
+    kitaeroom_time_adjustment = 0  # きたえるーむ調整による出発時刻変更（分、正=遅らせる、負=繰り上げる）
 
     # きたえるーむがルートにあるか確認
     has_kitaeroom = False
@@ -1577,9 +1579,13 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 kitaeroom_target = datetime.combine(datetime.today(), datetime.strptime("17:00", "%H:%M").time())
 
                 if kitaeroom_arrival_sim < kitaeroom_target:
-                    # 待機時間がある場合、その分出発を遅らせる
+                    # 17:00より早く着く場合、その分出発を遅らせる（正の値）
                     wait_diff = (kitaeroom_target - kitaeroom_arrival_sim).total_seconds() / 60
-                    kitaeroom_wait_adjustment = int(wait_diff)
+                    kitaeroom_time_adjustment = int(wait_diff)
+                elif kitaeroom_arrival_sim > kitaeroom_target:
+                    # 17:00より遅く着く場合、その分出発を繰り上げる（負の値）
+                    early_diff = (kitaeroom_arrival_sim - kitaeroom_target).total_seconds() / 60
+                    kitaeroom_time_adjustment = -int(early_diff)
                 break
 
     # 出発時刻を7:00以降で計算し、到着時刻を算出
@@ -1588,17 +1594,19 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
     min_arrival = datetime.combine(datetime.today(),
                                    datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
 
-    # きたえるーむ待機時間を考慮して出発を遅らせる
-    adjusted_departure = min_departure + timedelta(minutes=kitaeroom_wait_adjustment)
+    # きたえるーむ調整時間を考慮して出発時刻を調整
+    adjusted_departure = min_departure + timedelta(minutes=kitaeroom_time_adjustment)
 
     # 調整後の出発時刻で到着時刻を計算
     total_travel_to_first = o2_to_shacho_time + SHACHO_HOME["stay_min"] * 60 + shacho_to_first_time
     calculated_arrival = adjusted_departure + timedelta(seconds=total_travel_to_first)
 
-    # 到着時刻が8:00より早い場合は8:00に調整（出発時刻を遅らせる）
-    if calculated_arrival < min_arrival:
+    # 到着時刻が8:00より早い場合は8:00に調整（ただしきたえるーむ17:00固定を優先）
+    if calculated_arrival < min_arrival and kitaeroom_time_adjustment >= 0:
+        # 17:00より早く着く場合のみ8:00調整を適用
         first_visit_arrival = min_arrival
     else:
+        # 17:00より遅く着く場合は8:00より早くても繰り上げを優先
         first_visit_arrival = calculated_arrival
 
     # 逆算して出発時刻を計算

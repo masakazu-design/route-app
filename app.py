@@ -2337,12 +2337,31 @@ if map_df is not None and len(map_df) > 0:
                     day_visits.append(f"訪問先{i + 1}")
             st.write(f"**訪問先 ({len(visit_indices)}件):** {' → '.join(day_visits)}")
 
-            # 終了時刻チェック
+            # 出発・終了時刻のアドバイス
+            start_time = metrics["start_time"]
             end_time = metrics["end_time"]
+
+            advices = []
+
+            # 出発時刻チェック
+            if start_time.hour < 6:
+                advices.append(f"🌙 出発が{format_time(start_time)}と早朝です。訪問先を他の日に移動することを検討してください。")
+            elif start_time.hour < 7:
+                advices.append(f"⏰ 出発が{format_time(start_time)}と早めです。")
+
+            # 終了時刻チェック
             if end_time.hour >= 20:
-                st.error(f"🚨 終了時刻が{format_time(end_time)}です！日数を増やすことを検討してください。")
+                advices.append(f"🚨 終了が{format_time(end_time)}と遅いです！日数を増やすか、訪問先を他の日に移動してください。")
             elif end_time.hour >= 18:
-                st.warning(f"⚠️ 終了時刻が{format_time(end_time)}です（目安18:00超過）")
+                advices.append(f"🌆 終了が{format_time(end_time)}です。帰りが遅くなります。")
+
+            # アドバイスを表示
+            if advices:
+                for advice in advices:
+                    if "🚨" in advice or "🌙" in advice:
+                        st.error(advice)
+                    else:
+                        st.warning(advice)
 
             # 列の並び順を整理
             column_order = ["順番", "到着時刻", "出発時刻", "滞在時間(分)", "移動時間(分)", "待機時間(分)", "場所名", "備考"]

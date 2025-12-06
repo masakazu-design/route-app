@@ -104,9 +104,9 @@ st.markdown("""
 # 定数定義
 # ========================================
 
-# API設定（固定値）
-DEFAULT_API_KEY = "AIzaSyDMIInzfcYTreHPInC__UqXeuCu29l_DbM"
-DEFAULT_MAP_ID = "1TCoQfitzdck4l5zkm7aJc7m9JWhyMwqw"
+# API設定（Streamlit Secretsから取得）
+DEFAULT_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+DEFAULT_MAP_ID = st.secrets.get("GOOGLE_MAP_ID", "")
 
 # 稼働時間設定（固定）
 WORK_HOURS_PER_DAY = 8.0

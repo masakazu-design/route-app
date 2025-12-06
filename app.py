@@ -1257,7 +1257,35 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             arrival = current_time + timedelta(seconds=travel_time)
             total_travel_seconds += travel_time
 
-        # ランチ挿入チェック
+        # 訪問先の処理
+        travel_min = int(travel_time) // 60
+
+        # ============================================
+        # 昼休み訪問禁止ルール（12:00-13:00）
+        # 相手先の昼休みを避けて到着時刻を調整
+        # ============================================
+        lunch_break_wait = 0
+        lunch_break_adjusted = False
+
+        # きたえるーむは17:00固定なので昼休み調整の対象外
+        if not is_kitaeroom(point_name):
+            # 1件目の場合は打ち合わせ+滞在時間、2件目以降は滞在時間のみ
+            if i == 0:
+                total_stay_for_check = MEETING_DURATION + stay_duration
+            else:
+                total_stay_for_check = stay_duration
+
+            adjusted_arrival, lunch_break_wait, lunch_break_adjusted = adjust_for_lunch_break(
+                arrival, total_stay_for_check, point_name
+            )
+
+            if lunch_break_adjusted:
+                arrival = adjusted_arrival
+
+        # ============================================
+        # ランチ挿入チェック（adjust_for_lunch_break の後に実行）
+        # 昼食終了時刻は調整後の到着時刻に合わせる
+        # ============================================
         lunch_check_time = datetime.combine(datetime.today(),
                                             datetime.strptime(f"{LUNCH_START_HOUR}:{LUNCH_START_MINUTE}", "%H:%M").time())
 
@@ -1269,16 +1297,16 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
 
         skip_lunch_for_same_location = is_same_location(prev_point_name, point_name)
 
-        # 昼食挿入条件：到着時刻が11:30以降、または移動中に11:30を跨ぐ場合
+        # 昼食挿入条件：到着時刻が11:30以降（調整後の到着時刻を使用）
         should_insert_lunch = (
             not lunch_inserted and
             i > 0 and
             not skip_lunch_for_same_location and
-            arrival >= lunch_check_time  # 到着時刻が11:30以降
+            arrival >= lunch_check_time  # 調整後の到着時刻が11:30以降
         )
 
         if should_insert_lunch:
-            # 昼食終了時刻は次の訪問先到着時刻に合わせる
+            # 昼食終了時刻は次の訪問先到着時刻に合わせる（調整後）
             lunch_end = arrival
             # 昼食開始時刻 = 前の訪問終了時刻（current_time）以降
             lunch_start = max(current_time, lunch_end - timedelta(minutes=LUNCH_DURATION))
@@ -1312,31 +1340,6 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 total_stay_minutes += actual_lunch_duration
 
             lunch_inserted = True
-
-        # 訪問先の処理
-        travel_min = int(travel_time) // 60
-
-        # ============================================
-        # 昼休み訪問禁止ルール（12:00-13:00）
-        # 相手先の昼休みを避けて到着時刻を調整
-        # ============================================
-        lunch_break_wait = 0
-        lunch_break_adjusted = False
-
-        # きたえるーむは17:00固定なので昼休み調整の対象外
-        if not is_kitaeroom(point_name):
-            # 1件目の場合は打ち合わせ+滞在時間、2件目以降は滞在時間のみ
-            if i == 0:
-                total_stay_for_check = MEETING_DURATION + stay_duration
-            else:
-                total_stay_for_check = stay_duration
-
-            adjusted_arrival, lunch_break_wait, lunch_break_adjusted = adjust_for_lunch_break(
-                arrival, total_stay_for_check, point_name
-            )
-
-            if lunch_break_adjusted:
-                arrival = adjusted_arrival
 
         # ============================================
         # きたえるーむ17:00固定ルール
@@ -1430,13 +1433,58 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         current_time = departure
         order += 1
 
-    # 4. 社長宅（送り届け）
+    # ============================================
+    # 社長宅への移動前の昼食挿入チェック
+    # （訪問先ループ後でも昼食が挿入されていない場合）
+    # ============================================
     last_visit_matrix_idx = filtered_visit_indices[-1] + 2
     last_to_shacho_time = time_matrix_all[last_visit_matrix_idx][shacho_idx]
     last_to_shacho_min = int(last_to_shacho_time) // 60
     total_travel_seconds += last_to_shacho_time
 
     shacho_return_arrival = current_time + timedelta(seconds=last_to_shacho_time)
+
+    # 昼食がまだ挿入されておらず、社長宅への到着が11:30以降の場合
+    lunch_check_time = datetime.combine(datetime.today(),
+                                        datetime.strptime(f"{LUNCH_START_HOUR}:{LUNCH_START_MINUTE}", "%H:%M").time())
+
+    if not lunch_inserted and shacho_return_arrival >= lunch_check_time:
+        # 昼食終了時刻は社長宅到着時刻に合わせる
+        lunch_end = shacho_return_arrival
+        # 昼食開始時刻 = 最後の訪問終了時刻（current_time）以降
+        lunch_start = max(current_time, lunch_end - timedelta(minutes=LUNCH_DURATION))
+
+        # 実際の昼食時間
+        actual_lunch_duration = int((lunch_end - lunch_start).total_seconds() / 60)
+
+        # 昼食時間が30分以上確保できる場合のみ挿入
+        if actual_lunch_duration >= 30:
+            last_visit_idx = filtered_visit_indices[-1]
+            last_lat = visit_df.iloc[last_visit_idx]["lat"]
+            last_lon = visit_df.iloc[last_visit_idx]["lon"]
+
+            restaurant_name = "昼食休憩"
+            if api_key:
+                restaurants, _ = find_nearby_restaurant(last_lat, last_lon, api_key)
+                if restaurants:
+                    restaurant_name = f"昼食：{restaurants[0]['name']}"
+
+            timetable.append({
+                "順番": "🍽️",
+                "場所名": restaurant_name,
+                "到着時刻": format_time(lunch_start),
+                "出発時刻": format_time(lunch_end),
+                "滞在時間(分)": actual_lunch_duration,
+                "移動時間(分)": 0,
+                "待機時間(分)": 0,
+                "備考": "昼食休憩"
+            })
+            calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({actual_lunch_duration}分) {restaurant_name}")
+            total_stay_minutes += actual_lunch_duration
+
+        lunch_inserted = True
+
+    # 4. 社長宅（送り届け）
     shacho_return_departure = shacho_return_arrival + timedelta(minutes=SHACHO_HOME["stay_min"])
 
     timetable.append({

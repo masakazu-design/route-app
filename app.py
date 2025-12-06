@@ -10,6 +10,7 @@ import requests
 import xml.etree.ElementTree as ET
 import unicodedata
 from streamlit_folium import st_folium
+from streamlit_sortables import sort_items
 from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from datetime import datetime, timedelta
@@ -2692,6 +2693,77 @@ if map_df is not None and len(map_df) > 0:
                         st.warning("移動する訪問先を選択してください")
             else:
                 st.write(f"Day {from_day} に訪問先がありません")
+
+        # ========================================
+        # 訪問順序の並べ替え（ドラッグ＆ドロップ）
+        # ========================================
+        st.markdown("---")
+        st.subheader("📋 訪問順序の並べ替え")
+        st.info("ドラッグ＆ドロップで訪問順序を変更できます。変更後「順序を適用」ボタンを押してください。")
+
+        # 日程選択
+        reorder_day = st.selectbox(
+            "並べ替える日程:",
+            options=list(range(1, result_num_days + 1)),
+            format_func=lambda x: f"{x}日目",
+            key="reorder_day_select"
+        )
+        reorder_day_idx = reorder_day - 1
+
+        # 選択した日の訪問先リストを取得
+        reorder_visit_indices = day_routes[reorder_day_idx] if reorder_day_idx < len(day_routes) else []
+
+        if reorder_visit_indices:
+            # 訪問先名とインデックスのマッピングを作成
+            reorder_items = []
+            reorder_idx_map = {}
+            for idx in reorder_visit_indices:
+                if result_name_col and idx < len(result_selected_df):
+                    name = result_selected_df.iloc[idx][result_name_col]
+                else:
+                    name = f"訪問先{idx + 1}"
+                reorder_items.append(name)
+                reorder_idx_map[name] = idx
+
+            # ドラッグ＆ドロップで並べ替え
+            sorted_items = sort_items(reorder_items, key=f"sort_day_{reorder_day}")
+
+            # 順序が変更されたかチェック
+            order_changed = sorted_items != reorder_items
+
+            if order_changed:
+                st.warning("⚠️ 順序が変更されています。「順序を適用」ボタンを押して反映してください。")
+
+            # 順序適用ボタン
+            if st.button("✅ 順序を適用", key="btn_apply_order", use_container_width=True):
+                # 新しい順序でインデックスリストを再構築
+                new_order_indices = [reorder_idx_map[name] for name in sorted_items]
+
+                # きたえるーむが含まれている場合、最後に移動
+                kitaeroom_idx = None
+                for i, idx in enumerate(new_order_indices):
+                    if result_name_col and idx < len(result_selected_df):
+                        name = result_selected_df.iloc[idx][result_name_col]
+                        if is_kitaeroom(name):
+                            kitaeroom_idx = i
+                            break
+
+                if kitaeroom_idx is not None and kitaeroom_idx != len(new_order_indices) - 1:
+                    # きたえるーむを最後に移動
+                    kitaeroom_item = new_order_indices.pop(kitaeroom_idx)
+                    new_order_indices.append(kitaeroom_item)
+                    st.info("きたえるーむは17:00固定のため、最後に配置しました。")
+
+                # day_routesを更新
+                new_day_routes = [list(r) for r in day_routes]
+                new_day_routes[reorder_day_idx] = new_order_indices
+
+                # session_state を更新
+                st.session_state.route_result["day_routes"] = new_day_routes
+                st.success(f"✅ {reorder_day}日目の訪問順序を更新しました！")
+                st.rerun()
+        else:
+            st.write(f"{reorder_day}日目に訪問先がありません")
 
         # リセットボタン
         st.markdown("---")

@@ -2509,18 +2509,27 @@ if map_df is not None and len(map_df) > 0:
 
             advices_critical = []  # 重大な問題
             advices_warning = []   # 注意
+            advices_info = []      # 提案
+
+            # この日の訪問先を分析
+            day_locations = timetable_df["場所名"].tolist() if "場所名" in timetable_df.columns else []
+            has_kitaeroom = any(is_kitaeroom(loc) for loc in day_locations)
+            has_o2_task = any(is_o2_honsha_task(loc) for loc in day_locations)
+            has_fujisawa = any(is_fujisawa_souko(loc) for loc in day_locations)
 
             # 出発時刻チェック
             if start_time.hour < 6:
-                advices_critical.append(
-                    f"**【早朝出発】** 出発が **{format_time(start_time)}** です。\n\n"
-                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
-                )
+                msg = f"**【早朝出発】** 出発が **{format_time(start_time)}** です。\n\n"
+                msg += f"👉 一部の訪問先を他の日に移動することを検討してください。"
+                if has_kitaeroom:
+                    msg += f"\n\n💡 **きたえるーむを別の日に移動**すると改善する可能性があります。"
+                advices_critical.append(msg)
             elif start_time.hour < 7:
-                advices_warning.append(
-                    f"**【早めの出発】** 出発が **{format_time(start_time)}** です。\n\n"
-                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
-                )
+                msg = f"**【早めの出発】** 出発が **{format_time(start_time)}** です。\n\n"
+                msg += f"👉 一部の訪問先を他の日に移動することを検討してください。"
+                if has_kitaeroom:
+                    msg += f"\n\n💡 **きたえるーむを別の日に移動**すると改善する可能性があります。"
+                advices_warning.append(msg)
 
             # 終了時刻チェック
             if end_time.hour >= 20:
@@ -2555,6 +2564,44 @@ if map_df is not None and len(map_df) > 0:
                             f"👉 O2本社・藤沢倉庫の挿入やきたえるーむ17:00固定の影響です。訪問先の調整で改善できる場合があります。"
                         )
 
+            # O2本社・藤沢倉庫の挿入提案（きたえるーむがある日で、まだ挿入されていない場合）
+            if has_kitaeroom and (not has_o2_task or not has_fujisawa):
+                # きたえるーむ前の待機時間を取得
+                kitaeroom_wait = 0
+                for _, row in timetable_df.iterrows():
+                    if is_kitaeroom(row.get("場所名", "")):
+                        kitaeroom_wait = row.get("待機時間(分)", 0)
+                        break
+
+                # 必要時間: O2本社(80分) + 移動(10分) + 藤沢倉庫(15分) + 移動(15分) = 120分
+                required_time = 120
+
+                # きたえるーむ17:00前の余裕時間を計算
+                # 最後の通常訪問先からきたえるーむまでの時間を確認
+                kitaeroom_arrival = datetime.combine(datetime.today(), datetime.strptime("17:00", "%H:%M").time())
+                available_before_kitaeroom = kitaeroom_wait  # 待機時間 = 余裕時間
+
+                if not has_o2_task and not has_fujisawa:
+                    if available_before_kitaeroom >= required_time:
+                        advices_info.append(
+                            f"**【挿入可能】** きたえるーむ前に **{int(available_before_kitaeroom)}分** の余裕があります。\n\n"
+                            f"💡 O2本社(80分) + 藤沢倉庫(15分)を挿入できます。手動調整で追加してください。"
+                        )
+                elif not has_o2_task:
+                    # 藤沢倉庫はあるがO2本社がない
+                    if available_before_kitaeroom >= 90:  # O2本社(80分) + 移動(10分)
+                        advices_info.append(
+                            f"**【挿入可能】** きたえるーむ前に **{int(available_before_kitaeroom)}分** の余裕があります。\n\n"
+                            f"💡 O2本社(80分)を挿入できます。手動調整で追加してください。"
+                        )
+                elif not has_fujisawa:
+                    # O2本社はあるが藤沢倉庫がない
+                    if available_before_kitaeroom >= 30:  # 藤沢倉庫(15分) + 移動(15分)
+                        advices_info.append(
+                            f"**【挿入可能】** きたえるーむ前に **{int(available_before_kitaeroom)}分** の余裕があります。\n\n"
+                            f"💡 藤沢倉庫(15分)を挿入できます。手動調整で追加してください。"
+                        )
+
             # アドバイスを目立つボックスで表示
             if advices_critical:
                 st.markdown("---")
@@ -2565,6 +2612,10 @@ if map_df is not None and len(map_df) > 0:
             if advices_warning:
                 for advice in advices_warning:
                     st.warning(f"⚠️ {advice}")
+
+            if advices_info:
+                for advice in advices_info:
+                    st.info(f"💡 {advice}")
 
             # 列の並び順を整理
             column_order = ["順番", "到着時刻", "出発時刻", "滞在時間(分)", "移動時間(分)", "待機時間(分)", "場所名", "備考"]

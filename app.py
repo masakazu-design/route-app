@@ -320,6 +320,7 @@ def is_genba_only(location_name):
 def reorder_office_genba_pairs(route_indices, visit_df, name_col):
     """
     ルート内の同一場所ペアを事務所→現場の順に並べ替える
+    TSP順序を維持しつつ、現場を対応する事務所の直後に移動する
 
     Args:
         route_indices: 訪問先インデックスのリスト
@@ -333,24 +334,50 @@ def reorder_office_genba_pairs(route_indices, visit_df, name_col):
         return route_indices
 
     result = list(route_indices)
-    i = 0
 
-    while i < len(result) - 1:
-        current_idx = result[i]
-        next_idx = result[i + 1]
+    # 各訪問先の基本名とタイプを取得
+    idx_info = {}
+    base_name_groups = {}
+    for idx in result:
+        name = visit_df.iloc[idx][name_col]
+        base_name = get_base_location_name(name)
+        is_office = is_office_location(name)
+        is_genba = is_genba_only(name)
+        idx_info[idx] = {"base_name": base_name, "is_office": is_office, "is_genba": is_genba}
 
-        current_name = visit_df.iloc[current_idx][name_col]
-        next_name = visit_df.iloc[next_idx][name_col]
+        if base_name:
+            if base_name not in base_name_groups:
+                base_name_groups[base_name] = {"offices": [], "genbas": []}
+            if is_office:
+                base_name_groups[base_name]["offices"].append(idx)
+            elif is_genba:
+                base_name_groups[base_name]["genbas"].append(idx)
 
-        # 同じ場所のペアかどうかチェック
-        if is_same_location(current_name, next_name):
-            # 現場→事務所の順になっていたら入れ替え
-            if is_genba_only(current_name) and is_office_location(next_name):
-                result[i], result[i + 1] = result[i + 1], result[i]
+    # 現場を対応する事務所の直後に移動
+    to_remove = set()
+    insertions = {}  # {事務所idx: [現場idx, ...]}
 
-        i += 1
+    for base_name, group in base_name_groups.items():
+        if group["offices"] and group["genbas"]:
+            # 事務所がある場合、現場を事務所の直後に移動
+            office_idx = group["offices"][0]  # 最初の事務所
+            for genba_idx in group["genbas"]:
+                to_remove.add(genba_idx)
+                if office_idx not in insertions:
+                    insertions[office_idx] = []
+                insertions[office_idx].append(genba_idx)
 
-    return result
+    # 新しいリストを構築
+    new_result = []
+    for idx in result:
+        if idx in to_remove:
+            continue
+        new_result.append(idx)
+        # この事務所の直後に現場を挿入
+        if idx in insertions:
+            new_result.extend(insertions[idx])
+
+    return new_result
 
 
 def overlaps_forbidden_lunch_time(arrival_time, departure_time):

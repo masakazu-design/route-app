@@ -2042,6 +2042,13 @@ st.sidebar.header("⚙️ 設定")
 st.sidebar.subheader("🗓️ 日程設定")
 num_days = st.sidebar.number_input("確保する日数", value=2, min_value=1, max_value=10, step=1)
 
+# 帰宅希望時刻（任意）
+use_return_deadline = st.sidebar.checkbox("帰宅希望時刻を設定", value=False)
+if use_return_deadline:
+    return_deadline_time = st.sidebar.time_input("帰宅希望時刻", value=datetime.strptime("17:00", "%H:%M").time())
+else:
+    return_deadline_time = None
+
 st.sidebar.markdown("---")
 
 # 移動時間バイアス表示
@@ -2526,6 +2533,16 @@ if map_df is not None and len(map_df) > 0:
                     f"**【帰りが遅め】** 終了が **{format_time(end_time)}** です。\n\n"
                     f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
+
+            # 帰宅希望時刻チェック
+            if return_deadline_time is not None:
+                deadline_datetime = datetime.combine(datetime.today(), return_deadline_time)
+                if end_time > deadline_datetime:
+                    over_minutes = int((end_time - deadline_datetime).total_seconds() / 60)
+                    advices_critical.append(
+                        f"**【帰宅希望時刻超過】** 終了が **{format_time(end_time)}** で、希望時刻 **{return_deadline_time.strftime('%H:%M')}** を **{over_minutes}分** 超えています。\n\n"
+                        f"👉 一部の訪問先を他の日に移動してください。"
+                    )
 
             # 待機時間チェック（60分以上で警告）
             if "待機時間(分)" in timetable_df.columns:

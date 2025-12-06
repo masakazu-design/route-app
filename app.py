@@ -1811,8 +1811,21 @@ if map_df is not None and len(map_df) > 0:
     # 対象レイヤーのデータのみ抽出
     existing_layers = map_df["layer_normalized"].unique().tolist()
 
-    # 不足レイヤーの警告
-    missing_layers = [t for t in TARGET_LAYERS_NORMALIZED if t not in existing_layers]
+    # 不足レイヤーの警告（O2/02は同一扱い）
+    def check_layer_exists(target, existing):
+        """O2グループと02グループは同一扱いでチェック"""
+        if target in existing:
+            return True
+        # O2と02の相互チェック
+        if target == "O2グループ" and "02グループ" in existing:
+            return True
+        if target == "02グループ" and "O2グループ" in existing:
+            return True
+        return False
+
+    # 警告対象のレイヤー（O2/02は重複を避ける）
+    check_targets = ["施工中工事", "O2グループ", "発注先"]
+    missing_layers = [t for t in check_targets if not check_layer_exists(t, existing_layers)]
     if missing_layers:
         st.warning(f"⚠️ 以下のレイヤーがデータ内に見つかりませんでした: {', '.join(missing_layers)}")
 

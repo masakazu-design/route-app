@@ -290,6 +290,21 @@ def is_o2_honsha_task(location_name):
     return "O2本社" in name and "出発" not in name and "帰社" not in name
 
 
+def get_base_location_name(location_name):
+    """場所名から基本名を抽出（事務所/現場の接尾辞を除去）"""
+    name = str(location_name)
+    # （事務所）（現場）（事務所・現場）を除去
+    import re
+    return re.sub(r'[（\(](事務所|現場|事務所・現場)[）\)]$', '', name).strip()
+
+
+def is_same_location(name1, name2):
+    """2つの場所名が同じ場所（事務所と現場のペア）かどうかを判定"""
+    base1 = get_base_location_name(name1)
+    base2 = get_base_location_name(name2)
+    return base1 == base2 and base1 != ""
+
+
 def overlaps_forbidden_lunch_time(arrival_time, departure_time):
     """
     訪問時間帯が昼休み禁止時間帯（12:00-13:00）と重なるかを判定
@@ -1246,9 +1261,19 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         lunch_check_time = datetime.combine(datetime.today(),
                                             datetime.strptime(f"{LUNCH_START_HOUR}:{LUNCH_START_MINUTE}", "%H:%M").time())
 
-        if not lunch_inserted and current_time >= lunch_check_time and i > 0:
-            lunch_start = current_time
-            lunch_end = lunch_start + timedelta(minutes=LUNCH_DURATION)
+        # 同じ場所（事務所→現場）の間には昼食を挟まない
+        prev_point_name = ""
+        if i > 0:
+            prev_visit_idx = filtered_visit_indices[i - 1]
+            prev_point_name = visit_df.iloc[prev_visit_idx][name_col] if name_col else ""
+
+        skip_lunch_for_same_location = is_same_location(prev_point_name, point_name)
+
+        if not lunch_inserted and current_time >= lunch_check_time and i > 0 and not skip_lunch_for_same_location:
+            # 昼食終了時刻は次の訪問先到着時刻に合わせる（移動時間を考慮）
+            # arrival = current_time + travel_time なので、昼食後の到着時刻を計算
+            lunch_end = arrival  # 次の訪問先への到着時刻
+            lunch_start = lunch_end - timedelta(minutes=LUNCH_DURATION)
 
             prev_visit_idx = filtered_visit_indices[i - 1]
             prev_lat = visit_df.iloc[prev_visit_idx]["lat"]
@@ -1273,9 +1298,8 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({LUNCH_DURATION}分) {restaurant_name}")
             total_stay_minutes += LUNCH_DURATION
 
-            current_time = lunch_end
+            # current_timeは更新しない（arrivalはすでに計算済み）
             lunch_inserted = True
-            arrival = current_time + timedelta(seconds=travel_time)
 
         # 訪問先の処理
         travel_min = int(travel_time) // 60

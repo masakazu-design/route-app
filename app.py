@@ -2529,241 +2529,71 @@ if map_df is not None and len(map_df) > 0:
             st.dataframe(timetable_df, use_container_width=True)
 
         # ========================================
-        # 手動調整UI
+        # 手動調整UI（ドラッグ＆ドロップで日程間移動・順序変更）
         # ========================================
         st.markdown("---")
         st.subheader("🛠️ スケジュール手動調整")
-        st.info("訪問先を別の日に移動できます。移動後は自動的にルート順序が再最適化されます。")
+        st.info("ドラッグ＆ドロップで訪問先を別の日に移動したり、順序を変更できます。変更後「スケジュールを適用」ボタンを押してください。")
 
-        # 各日の訪問先名を取得（visit_dfから直接取得）
-        day_visit_names = {}
-        day_visit_name_to_idx = {}
+        # 各日の訪問先名とインデックスのマッピングを作成
+        global_name_to_idx = {}
+        multi_container_items = {}
+
         for day_idx in range(result_num_days):
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
-            names = []
-            name_to_idx = {}
+            day_items = []
             for idx in visit_indices:
-                # result_selected_dfから直接名前を取得
                 if result_name_col and idx < len(result_selected_df):
                     name = result_selected_df.iloc[idx][result_name_col]
                 else:
                     name = f"訪問先{idx + 1}"
-                names.append(name)
-                name_to_idx[name] = idx
-            day_visit_names[day_idx] = names
-            day_visit_name_to_idx[day_idx] = name_to_idx
+                day_items.append(name)
+                global_name_to_idx[name] = idx
+            multi_container_items[f"{day_idx + 1}日目"] = day_items
 
-        # 2日間の場合の移動UI
-        if result_num_days >= 2:
-            col_left, col_right = st.columns(2)
+        # マルチコンテナでドラッグ＆ドロップ（日程間移動対応）
+        sorted_multi = sort_items(multi_container_items, multi_containers=True, key="multi_day_sort")
 
-            with col_left:
-                st.markdown("#### 2日目 → 1日目 へ移動")
-                day2_names = day_visit_names.get(1, [])
-                if day2_names:
-                    move_to_day1 = st.multiselect(
-                        "2日目から移動する訪問先:",
-                        options=day2_names,
-                        default=[],
-                        key="move_to_day1"
-                    )
-                    if st.button("⬆️ 1日目に移動", key="btn_move_to_day1", use_container_width=True):
-                        if move_to_day1:
-                            # 移動処理
-                            new_day_routes = [list(r) for r in day_routes]
-                            for name in move_to_day1:
-                                idx = day_visit_name_to_idx[1].get(name)
-                                if idx is not None and idx in new_day_routes[1]:
-                                    new_day_routes[1].remove(idx)
-                                    new_day_routes[0].append(idx)
+        # 変更があったかチェック
+        schedule_changed = sorted_multi != multi_container_items
 
-                            # 両日を再最適化（きたえるーむを最後尾に配置）
-                            new_day_routes[0] = reoptimize_day_route(
-                                new_day_routes[0], full_time_matrix, shacho_idx=1,
-                                visit_df=result_selected_df, name_col=result_name_col
-                            )
-                            new_day_routes[1] = reoptimize_day_route(
-                                new_day_routes[1], full_time_matrix, shacho_idx=1,
-                                visit_df=result_selected_df, name_col=result_name_col
-                            )
+        if schedule_changed:
+            st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
 
-                            # session_state を更新
-                            st.session_state.route_result["day_routes"] = new_day_routes
-                            st.rerun()
-                        else:
-                            st.warning("移動する訪問先を選択してください")
-                else:
-                    st.write("2日目に訪問先がありません")
+        # スケジュール適用ボタン
+        if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
+            # 新しいday_routesを構築
+            new_day_routes = []
+            kitaeroom_adjusted = False
 
-            with col_right:
-                st.markdown("#### 1日目 → 2日目 へ移動")
-                day1_names = day_visit_names.get(0, [])
-                if day1_names:
-                    move_to_day2 = st.multiselect(
-                        "1日目から移動する訪問先:",
-                        options=day1_names,
-                        default=[],
-                        key="move_to_day2"
-                    )
-                    if st.button("⬇️ 2日目に移動", key="btn_move_to_day2", use_container_width=True):
-                        if move_to_day2:
-                            # 移動処理
-                            new_day_routes = [list(r) for r in day_routes]
-                            for name in move_to_day2:
-                                idx = day_visit_name_to_idx[0].get(name)
-                                if idx is not None and idx in new_day_routes[0]:
-                                    new_day_routes[0].remove(idx)
-                                    new_day_routes[1].append(idx)
-
-                            # 両日を再最適化（きたえるーむを最後尾に配置）
-                            new_day_routes[0] = reoptimize_day_route(
-                                new_day_routes[0], full_time_matrix, shacho_idx=1,
-                                visit_df=result_selected_df, name_col=result_name_col
-                            )
-                            new_day_routes[1] = reoptimize_day_route(
-                                new_day_routes[1], full_time_matrix, shacho_idx=1,
-                                visit_df=result_selected_df, name_col=result_name_col
-                            )
-
-                            # session_state を更新
-                            st.session_state.route_result["day_routes"] = new_day_routes
-                            st.rerun()
-                        else:
-                            st.warning("移動する訪問先を選択してください")
-                else:
-                    st.write("1日目に訪問先がありません")
-
-        # 3日以上の場合の汎用移動UI
-        if result_num_days >= 3:
-            st.markdown("#### 任意の日程間で移動")
-            col_from, col_to = st.columns(2)
-
-            with col_from:
-                from_day = st.selectbox(
-                    "移動元の日程:",
-                    options=list(range(1, result_num_days + 1)),
-                    format_func=lambda x: f"{x}日目",
-                    key="from_day"
-                )
-
-            with col_to:
-                to_day_options = [d for d in range(1, result_num_days + 1) if d != from_day]
-                to_day = st.selectbox(
-                    "移動先の日程:",
-                    options=to_day_options,
-                    format_func=lambda x: f"{x}日目",
-                    key="to_day"
-                )
-
-            from_day_idx = from_day - 1
-            from_names = day_visit_names.get(from_day_idx, [])
-
-            if from_names:
-                move_items = st.multiselect(
-                    f"{from_day}日目から移動する訪問先:",
-                    options=from_names,
-                    default=[],
-                    key="move_items_generic"
-                )
-
-                if st.button(f"🔄 Day {to_day} に移動", key="btn_move_generic", use_container_width=True):
-                    if move_items:
-                        to_day_idx = to_day - 1
-                        new_day_routes = [list(r) for r in day_routes]
-
-                        for name in move_items:
-                            idx = day_visit_name_to_idx[from_day_idx].get(name)
-                            if idx is not None and idx in new_day_routes[from_day_idx]:
-                                new_day_routes[from_day_idx].remove(idx)
-                                new_day_routes[to_day_idx].append(idx)
-
-                        # 両日を再最適化（きたえるーむを最後尾に配置）
-                        new_day_routes[from_day_idx] = reoptimize_day_route(
-                            new_day_routes[from_day_idx], full_time_matrix, shacho_idx=1,
-                            visit_df=result_selected_df, name_col=result_name_col
-                        )
-                        new_day_routes[to_day_idx] = reoptimize_day_route(
-                            new_day_routes[to_day_idx], full_time_matrix, shacho_idx=1,
-                            visit_df=result_selected_df, name_col=result_name_col
-                        )
-
-                        st.session_state.route_result["day_routes"] = new_day_routes
-                        st.rerun()
-                    else:
-                        st.warning("移動する訪問先を選択してください")
-            else:
-                st.write(f"Day {from_day} に訪問先がありません")
-
-        # ========================================
-        # 訪問順序の並べ替え（ドラッグ＆ドロップ）
-        # ========================================
-        st.markdown("---")
-        st.subheader("📋 訪問順序の並べ替え")
-        st.info("ドラッグ＆ドロップで訪問順序を変更できます。変更後「順序を適用」ボタンを押してください。")
-
-        # 日程選択
-        reorder_day = st.selectbox(
-            "並べ替える日程:",
-            options=list(range(1, result_num_days + 1)),
-            format_func=lambda x: f"{x}日目",
-            key="reorder_day_select"
-        )
-        reorder_day_idx = reorder_day - 1
-
-        # 選択した日の訪問先リストを取得
-        reorder_visit_indices = day_routes[reorder_day_idx] if reorder_day_idx < len(day_routes) else []
-
-        if reorder_visit_indices:
-            # 訪問先名とインデックスのマッピングを作成
-            reorder_items = []
-            reorder_idx_map = {}
-            for idx in reorder_visit_indices:
-                if result_name_col and idx < len(result_selected_df):
-                    name = result_selected_df.iloc[idx][result_name_col]
-                else:
-                    name = f"訪問先{idx + 1}"
-                reorder_items.append(name)
-                reorder_idx_map[name] = idx
-
-            # ドラッグ＆ドロップで並べ替え
-            sorted_items = sort_items(reorder_items, key=f"sort_day_{reorder_day}")
-
-            # 順序が変更されたかチェック
-            order_changed = sorted_items != reorder_items
-
-            if order_changed:
-                st.warning("⚠️ 順序が変更されています。「順序を適用」ボタンを押して反映してください。")
-
-            # 順序適用ボタン
-            if st.button("✅ 順序を適用", key="btn_apply_order", use_container_width=True):
-                # 新しい順序でインデックスリストを再構築
-                new_order_indices = [reorder_idx_map[name] for name in sorted_items]
+            for day_idx in range(result_num_days):
+                day_key = f"{day_idx + 1}日目"
+                day_names = sorted_multi.get(day_key, [])
+                day_indices = [global_name_to_idx[name] for name in day_names if name in global_name_to_idx]
 
                 # きたえるーむが含まれている場合、最後に移動
-                kitaeroom_idx = None
-                for i, idx in enumerate(new_order_indices):
+                kitaeroom_pos = None
+                for i, idx in enumerate(day_indices):
                     if result_name_col and idx < len(result_selected_df):
                         name = result_selected_df.iloc[idx][result_name_col]
                         if is_kitaeroom(name):
-                            kitaeroom_idx = i
+                            kitaeroom_pos = i
                             break
 
-                if kitaeroom_idx is not None and kitaeroom_idx != len(new_order_indices) - 1:
-                    # きたえるーむを最後に移動
-                    kitaeroom_item = new_order_indices.pop(kitaeroom_idx)
-                    new_order_indices.append(kitaeroom_item)
-                    st.info("きたえるーむは17:00固定のため、最後に配置しました。")
+                if kitaeroom_pos is not None and kitaeroom_pos != len(day_indices) - 1:
+                    kitaeroom_item = day_indices.pop(kitaeroom_pos)
+                    day_indices.append(kitaeroom_item)
+                    kitaeroom_adjusted = True
 
-                # day_routesを更新
-                new_day_routes = [list(r) for r in day_routes]
-                new_day_routes[reorder_day_idx] = new_order_indices
+                new_day_routes.append(day_indices)
 
-                # session_state を更新
-                st.session_state.route_result["day_routes"] = new_day_routes
-                st.success(f"✅ {reorder_day}日目の訪問順序を更新しました！")
-                st.rerun()
-        else:
-            st.write(f"{reorder_day}日目に訪問先がありません")
+            if kitaeroom_adjusted:
+                st.info("きたえるーむは17:00固定のため、最後に配置しました。")
+
+            # session_state を更新
+            st.session_state.route_result["day_routes"] = new_day_routes
+            st.success("✅ スケジュールを更新しました！")
+            st.rerun()
 
         # リセットボタン
         st.markdown("---")

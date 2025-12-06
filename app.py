@@ -1850,11 +1850,20 @@ if map_df is not None and len(map_df) > 0:
 
     selected_rows_list = []
 
+    # UI表示用：実際のレイヤー名でグループ化（O2/02の重複を避ける）
+    displayed_layers = set()
+
     for target in TARGET_LAYERS_NORMALIZED:
         layer_df = filtered_df[filtered_df["layer_normalized"].str.contains(target, na=False)].copy()
 
         if len(layer_df) == 0:
             continue
+
+        # 実際のレイヤー名を取得（重複チェック用）
+        actual_layer_name = layer_df["layer"].iloc[0]
+        if actual_layer_name in displayed_layers:
+            continue  # 既に表示済みのレイヤーはスキップ
+        displayed_layers.add(actual_layer_name)
 
         # 場所名で並び替え（あいうえお順）
         if name_col and name_col in layer_df.columns:
@@ -1877,9 +1886,10 @@ if map_df is not None and len(map_df) > 0:
         else:
             layer_icon = "📍"
 
-        original_layer_name = layer_df["layer"].iloc[0]
+        # ユニークなキーを生成（実際のレイヤー名を使用）
+        layer_key = actual_layer_name.replace(" ", "_").replace("　", "_")
 
-        with st.expander(f"{layer_icon} {original_layer_name}（{len(layer_df)}件）", expanded=True):
+        with st.expander(f"{layer_icon} {actual_layer_name}（{len(layer_df)}件）", expanded=True):
             if name_col:
                 # 選択肢を作成
                 options = []
@@ -1896,7 +1906,7 @@ if map_df is not None and len(map_df) > 0:
                     "訪問する場所:",
                     options=options,
                     default=[],
-                    key=f"multiselect_{target}"
+                    key=f"multiselect_{layer_key}"
                 )
 
                 # 選択された行を抽出

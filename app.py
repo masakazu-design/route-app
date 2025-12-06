@@ -1468,7 +1468,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "待機時間(分)": 0,
         "備考": "前日準備済"
     })
-    calendar_text.append(f"{format_time(o2_departure)} - {format_time(o2_departure)} (0分) {O2_HONSHA['name']} 出発")
+    calendar_text.append(f"{format_time(o2_departure)}〜{format_time(o2_departure)} {O2_HONSHA['name']} 出発")
     order += 1
 
     # 2. 社長宅（ピックアップ）
@@ -1482,7 +1482,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "待機時間(分)": 0,
         "備考": "社長同乗"
     })
-    calendar_text.append(f"{format_time(shacho_arrival)} - {format_time(shacho_departure)} ({SHACHO_HOME['stay_min']}分) {SHACHO_HOME['name']}（社長同乗） 【移動: {o2_to_shacho_min}分】")
+    calendar_text.append(f"{format_time(shacho_arrival)}〜{format_time(shacho_departure)}（滞在{SHACHO_HOME['stay_min']}分） {SHACHO_HOME['name']}（社長同乗） 【移動: {o2_to_shacho_min}分】")
     order += 1
 
     # 3. 訪問先リスト
@@ -1600,7 +1600,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "待機時間(分)": 0,
                     "備考": "昼食休憩"
                 })
-                calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({actual_lunch_duration}分) {restaurant_name}")
+                calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)}（{actual_lunch_duration}分） {restaurant_name}")
                 total_stay_minutes += actual_lunch_duration
                 lunch_inserted = True  # 30分以上の場合のみ挿入済みとする
                 # 昼食休憩を表示したので、待機時間の重複表示を防ぐ
@@ -1652,7 +1652,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 })
 
                 wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
-                calendar_text.append(f"{format_time(arrival)} - {format_time(meeting_end)} ({MEETING_DURATION}分) {point_name}（打合せ） 【移動: {shacho_to_first_min}分】{wait_info}")
+                calendar_text.append(f"{format_time(arrival)}〜{format_time(meeting_end)}（滞在{MEETING_DURATION}分） {point_name}（打合せ） 【移動: {shacho_to_first_min}分】{wait_info}")
                 total_stay_minutes += MEETING_DURATION + total_wait
 
                 work_start = meeting_end
@@ -1667,7 +1667,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "待機時間(分)": 0,
                     "備考": ""
                 })
-                calendar_text.append(f"{format_time(work_start)} - {format_time(work_end)} ({stay_duration}分) {point_name}（点検開始）")
+                calendar_text.append(f"{format_time(work_start)}〜{format_time(work_end)}（滞在{stay_duration}分） {point_name}（点検開始）")
                 total_stay_minutes += stay_duration
                 departure = work_end
             else:
@@ -1692,7 +1692,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 })
 
                 wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
-                calendar_text.append(f"{format_time(arrival)} - {format_time(departure)} ({stay_duration}分) {point_name} 【移動: {shacho_to_first_min}分】{wait_info}")
+                calendar_text.append(f"{format_time(arrival)}〜{format_time(departure)}（滞在{stay_duration}分） {point_name} 【移動: {shacho_to_first_min}分】{wait_info}")
                 total_stay_minutes += stay_duration + total_wait
         else:
             # 2件目以降
@@ -1722,7 +1722,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             info_str = f" 【移動: {travel_min}分】" if travel_min > 0 else ""
             if total_wait > 0:
                 info_str += f"【待機: {total_wait}分】"
-            calendar_text.append(f"{format_time(arrival)} - {format_time(departure)} ({stay_duration}分) {point_name}{info_str}")
+            calendar_text.append(f"{format_time(arrival)}〜{format_time(departure)}（滞在{stay_duration}分） {point_name}{info_str}")
             total_stay_minutes += stay_duration + total_wait
 
         current_time = departure
@@ -1796,7 +1796,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "待機時間(分)": 0,
         "備考": "社長降車"
     })
-    calendar_text.append(f"{format_time(shacho_return_arrival)} - {format_time(shacho_return_departure)} ({SHACHO_HOME['stay_min']}分) {SHACHO_HOME['name']}（社長降車） 【移動: {last_to_shacho_min}分】")
+    calendar_text.append(f"{format_time(shacho_return_arrival)}〜{format_time(shacho_return_departure)}（滞在{SHACHO_HOME['stay_min']}分） {SHACHO_HOME['name']}（社長降車） 【移動: {last_to_shacho_min}分】")
     total_stay_minutes += SHACHO_HOME["stay_min"]
     order += 1
 
@@ -1816,10 +1816,10 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "待機時間(分)": 0,
         "備考": "業務終了"
     })
-    calendar_text.append(f"{format_time(o2_return_arrival)} - {format_time(o2_return_arrival)} (0分) {O2_HONSHA['name']} 解散 【移動: {shacho_to_o2_min}分】")
+    calendar_text.append(f"{format_time(o2_return_arrival)}〜{format_time(o2_return_arrival)} {O2_HONSHA['name']} 解散 【移動: {shacho_to_o2_min}分】")
 
     # カレンダー用テキスト整形
-    day_header = f"【Day {day_num}】"
+    day_header = f"【{day_num}日目】"
     calendar_output = day_header + "\n" + "\n".join(calendar_text)
 
     # メトリクス情報を追加
@@ -2295,7 +2295,7 @@ if map_df is not None and len(map_df) > 0:
 
         # 各日のタイムテーブル
         for day_num, timetable_df, metrics in all_timetables:
-            st.subheader(f"📅 Day {day_num}")
+            st.subheader(f"📅 {day_num}日目")
 
             day_idx = day_num - 1
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
@@ -2351,16 +2351,16 @@ if map_df is not None and len(map_df) > 0:
             col_left, col_right = st.columns(2)
 
             with col_left:
-                st.markdown("#### Day 2 → Day 1 へ移動")
+                st.markdown("#### 2日目 → 1日目 へ移動")
                 day2_names = day_visit_names.get(1, [])
                 if day2_names:
                     move_to_day1 = st.multiselect(
-                        "Day 2 から移動する訪問先:",
+                        "2日目から移動する訪問先:",
                         options=day2_names,
                         default=[],
                         key="move_to_day1"
                     )
-                    if st.button("⬆️ Day 1 に移動", key="btn_move_to_day1", use_container_width=True):
+                    if st.button("⬆️ 1日目に移動", key="btn_move_to_day1", use_container_width=True):
                         if move_to_day1:
                             # 移動処理
                             new_day_routes = [list(r) for r in day_routes]
@@ -2386,19 +2386,19 @@ if map_df is not None and len(map_df) > 0:
                         else:
                             st.warning("移動する訪問先を選択してください")
                 else:
-                    st.write("Day 2 に訪問先がありません")
+                    st.write("2日目に訪問先がありません")
 
             with col_right:
-                st.markdown("#### Day 1 → Day 2 へ移動")
+                st.markdown("#### 1日目 → 2日目 へ移動")
                 day1_names = day_visit_names.get(0, [])
                 if day1_names:
                     move_to_day2 = st.multiselect(
-                        "Day 1 から移動する訪問先:",
+                        "1日目から移動する訪問先:",
                         options=day1_names,
                         default=[],
                         key="move_to_day2"
                     )
-                    if st.button("⬇️ Day 2 に移動", key="btn_move_to_day2", use_container_width=True):
+                    if st.button("⬇️ 2日目に移動", key="btn_move_to_day2", use_container_width=True):
                         if move_to_day2:
                             # 移動処理
                             new_day_routes = [list(r) for r in day_routes]
@@ -2424,7 +2424,7 @@ if map_df is not None and len(map_df) > 0:
                         else:
                             st.warning("移動する訪問先を選択してください")
                 else:
-                    st.write("Day 1 に訪問先がありません")
+                    st.write("1日目に訪問先がありません")
 
         # 3日以上の場合の汎用移動UI
         if result_num_days >= 3:
@@ -2435,7 +2435,7 @@ if map_df is not None and len(map_df) > 0:
                 from_day = st.selectbox(
                     "移動元の日程:",
                     options=list(range(1, result_num_days + 1)),
-                    format_func=lambda x: f"Day {x}",
+                    format_func=lambda x: f"{x}日目",
                     key="from_day"
                 )
 
@@ -2444,7 +2444,7 @@ if map_df is not None and len(map_df) > 0:
                 to_day = st.selectbox(
                     "移動先の日程:",
                     options=to_day_options,
-                    format_func=lambda x: f"Day {x}",
+                    format_func=lambda x: f"{x}日目",
                     key="to_day"
                 )
 
@@ -2453,7 +2453,7 @@ if map_df is not None and len(map_df) > 0:
 
             if from_names:
                 move_items = st.multiselect(
-                    f"Day {from_day} から移動する訪問先:",
+                    f"{from_day}日目から移動する訪問先:",
                     options=from_names,
                     default=[],
                     key="move_items_generic"
@@ -2552,7 +2552,7 @@ if map_df is not None and len(map_df) > 0:
             day_idx = day_num - 1
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
 
-            with st.expander(f"📅 Day {day_num} のナビリンク", expanded=False):
+            with st.expander(f"📅 {day_num}日目 のナビリンク", expanded=False):
                 # O2本社
                 o2_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
                 st.markdown(f"**1. {O2_HONSHA['name']}（出発）** - [📍 ナビを開く]({o2_nav_url})")

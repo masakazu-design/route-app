@@ -315,23 +315,32 @@ def is_same_location(name1, name2):
 
 
 def is_fixed_location(location_name):
-    """Gap Fillingで追加される固定ロケーションかどうかを判定
-    O2本社、藤沢倉庫のみ（これらは打ち合わせ不要）
-    きたえるーむ、O2戸澤、吉田工務店、旧本社は通常訪問先として扱う
+    """固定ロケーションかどうかを判定
+    全ての訪問先で最初なら打ち合わせを行うため、常にFalseを返す
     """
-    name = str(location_name)
-    # Gap Fillingで追加されるロケーションのみ（打ち合わせ不要）
-    gap_fill_locations = ["O2本社", "藤沢倉庫"]
-    for loc in gap_fill_locations:
-        if loc in name:
-            return True
+    # 全ての訪問先（O2本社、藤沢倉庫含む）で最初なら打ち合わせを行う
     return False
 
 
 def is_office_location(location_name):
-    """事務所かどうかを判定（事務所・現場も事務所として扱う）"""
+    """事務所・社内施設かどうかを判定（打ち合わせを行う場所）
+    - 「事務所」を含む場所
+    - O2本社、藤沢倉庫、O2戸澤、旧本社、吉田工務店などの固定ロケーション
+    - 「現場」のみの場所は除外
+    """
     name = str(location_name)
-    return "事務所" in name
+    # 現場のみの場合は打ち合わせなし
+    if "現場" in name and "事務所" not in name:
+        return False
+    # 事務所を含む場合は打ち合わせあり
+    if "事務所" in name:
+        return True
+    # 固定ロケーション（O2本社、藤沢倉庫等）は打ち合わせあり
+    office_locations = ["O2本社", "藤沢倉庫", "O2戸澤", "旧本社", "吉田工務店", "きたえるーむ"]
+    for loc in office_locations:
+        if loc in name:
+            return True
+    return False
 
 
 def is_genba_only(location_name):

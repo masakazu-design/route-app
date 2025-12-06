@@ -810,14 +810,16 @@ def global_tsp_time_slice_allocation(
     daily_end_limit_minute=30
 ):
     """
-    Global TSP & Time Slicing 方式（きたえるーむ最後尾配置対応）
+    Global TSP & Time Slicing 方式（燃費重視・円形ルート対応）
 
     アルゴリズム:
-    1. きたえるーむ（時間指定あり）を一時的に除外
-    2. 残りの訪問先でTSP計算 → 地理的に近い場所は隣接
-    3. TSP結果の最後尾にきたえるーむを追加
-    4. TSP順序を維持したまま、Day1に可能な限り詰め込む
-    5. 終了時刻が17:30を超えたら、残りをDay2以降に回す
+    1. 同一場所（事務所＋現場）を1つのノードに統合してTSP計算
+    2. きたえるーむ（時間指定あり）を一時的に除外
+    3. 統合ノードでTSP計算 → 地理的に最短の円形ルート
+    4. TSP結果の最後尾にきたえるーむを追加
+    5. 統合ノードを事務所→現場の順に展開
+    6. TSP順序を維持したまま、Day1に可能な限り詰め込む
+    7. 終了時刻が17:30を超えたら、残りをDay2以降に回す
 
     Args:
         visit_df: 訪問先データフレーム
@@ -841,30 +843,66 @@ def global_tsp_time_slice_allocation(
         return [[0]] + [[] for _ in range(num_days - 1)]
 
     # ============================================
-    # Step 0: きたえるーむを特定して分離
+    # Step 0: 同一場所をグループ化（燃費重視のため統合）
     # ============================================
+    # 基本名 -> {offices: [idx, ...], genbas: [idx, ...]}
+    location_groups = {}
     kitaeroom_indices = []
-    normal_indices = []
 
     for idx in range(n_visits):
         if name_col:
             point_name = visit_df.iloc[idx][name_col]
         else:
             point_name = ""
+
         if is_kitaeroom(point_name):
             kitaeroom_indices.append(idx)
-        else:
-            normal_indices.append(idx)
+            continue
 
-    # きたえるーむしかない場合
-    if not normal_indices:
+        base_name = get_base_location_name(point_name)
+        if not base_name:
+            base_name = point_name  # 基本名が取得できない場合はそのまま
+
+        if base_name not in location_groups:
+            location_groups[base_name] = {"offices": [], "genbas": [], "representative_idx": None}
+
+        if is_office_location(point_name):
+            location_groups[base_name]["offices"].append(idx)
+            # 事務所を代表点として優先
+            if location_groups[base_name]["representative_idx"] is None:
+                location_groups[base_name]["representative_idx"] = idx
+        elif is_genba_only(point_name):
+            location_groups[base_name]["genbas"].append(idx)
+        else:
+            # 事務所でも現場でもない場合（通常の訪問先）
+            if location_groups[base_name]["representative_idx"] is None:
+                location_groups[base_name]["representative_idx"] = idx
+
+    # 代表点がない場合は現場から選ぶ
+    for base_name, group in location_groups.items():
+        if group["representative_idx"] is None:
+            if group["genbas"]:
+                group["representative_idx"] = group["genbas"][0]
+            elif group["offices"]:
+                group["representative_idx"] = group["offices"][0]
+
+    # 代表点のリスト（TSP計算用）
+    representative_indices = []
+    base_name_order = []  # 代表点の基本名順序
+    for base_name, group in location_groups.items():
+        if group["representative_idx"] is not None:
+            representative_indices.append(group["representative_idx"])
+            base_name_order.append(base_name)
+
+    # 代表点がない場合
+    if not representative_indices:
         return [kitaeroom_indices] + [[] for _ in range(num_days - 1)]
 
     # ============================================
-    # Step 1: きたえるーむ以外でGlobal TSP計算
+    # Step 1: 代表点でGlobal TSP計算（燃費重視）
     # ============================================
-    # ローカル行列を作成（社長宅 + きたえるーむ以外の訪問先）
-    local_size = 1 + len(normal_indices)
+    # ローカル行列を作成（社長宅 + 代表点）
+    local_size = 1 + len(representative_indices)
     local_matrix = [[0] * local_size for _ in range(local_size)]
 
     for i in range(local_size):
@@ -872,21 +910,34 @@ def global_tsp_time_slice_allocation(
             if i == 0:
                 orig_full_idx = shacho_idx
             else:
-                orig_full_idx = normal_indices[i - 1] + 2
+                orig_full_idx = representative_indices[i - 1] + 2
             if j == 0:
                 dest_full_idx = shacho_idx
             else:
-                dest_full_idx = normal_indices[j - 1] + 2
+                dest_full_idx = representative_indices[j - 1] + 2
             local_matrix[i][j] = time_matrix_all[orig_full_idx][dest_full_idx]
 
     # TSP計算（社長宅をデポとして）
     tsp_result = solve_tsp_optimal_order(local_matrix, depot_idx=0)
 
-    # TSP結果を元のインデックスに変換
-    tsp_order = [normal_indices[idx - 1] for idx in tsp_result]
+    # ============================================
+    # Step 2: TSP結果を展開（事務所→現場の順）
+    # ============================================
+    tsp_order = []
+    for local_idx in tsp_result:
+        base_name = base_name_order[local_idx - 1]
+        group = location_groups[base_name]
+
+        # 事務所を先に追加
+        for office_idx in group["offices"]:
+            tsp_order.append(office_idx)
+
+        # 次に現場を追加
+        for genba_idx in group["genbas"]:
+            tsp_order.append(genba_idx)
 
     # ============================================
-    # Step 2: きたえるーむを最後尾に追加
+    # Step 3: きたえるーむを最後尾に追加
     # ============================================
     tsp_order.extend(kitaeroom_indices)
 
@@ -1252,13 +1303,10 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         return pd.DataFrame(), "", []
 
     # ============================================
-    # 訪問先リストを事務所→現場の順に並べ替え
-    # （Gap Filling移動は optimize_gap_filling_moves で事前処理済み）
+    # 訪問先リストをそのまま使用
+    # （TSP計算時に同一場所を統合し、事務所→現場の順で展開済み）
     # ============================================
-    filtered_visit_indices = reorder_office_genba_pairs(list(visit_indices), visit_df, name_col)
-
-    if not filtered_visit_indices:
-        return pd.DataFrame(), "", []
+    filtered_visit_indices = list(visit_indices)
 
     first_visit_arrival = datetime.combine(datetime.today(),
                                            datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time())

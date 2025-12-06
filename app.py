@@ -2566,6 +2566,7 @@ if map_df is not None and len(map_df) > 0:
         multi_container_items = []  # list[dict] 形式
         kitaeroom_idx = None  # きたえるーむのインデックス
         kitaeroom_name = None  # きたえるーむの名前
+        has_any_items = False  # 訪問先があるかどうか
 
         for day_idx in range(result_num_days):
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
@@ -2586,58 +2587,63 @@ if map_df is not None and len(map_df) > 0:
 
                 day_items.append(display_name)
                 global_name_to_idx[display_name] = idx
+                has_any_items = True
 
             multi_container_items.append({
                 "header": f"{day_idx + 1}日目",
                 "items": day_items
             })
 
-        # マルチコンテナでドラッグ＆ドロップ（日程間移動対応）
-        sorted_multi = sort_items(multi_container_items, multi_containers=True, key="multi_day_sort")
+        # 訪問先がない場合はドラッグ＆ドロップを表示しない
+        if not has_any_items:
+            st.warning("訪問先がありません。スケジュール作成を行ってください。")
+        else:
+            # マルチコンテナでドラッグ＆ドロップ（日程間移動対応）
+            sorted_multi = sort_items(multi_container_items, multi_containers=True, key="multi_day_sort")
 
-        # 変更があったかチェック
-        schedule_changed = sorted_multi != multi_container_items
+            # 変更があったかチェック
+            schedule_changed = sorted_multi != multi_container_items
 
-        if schedule_changed:
-            st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
+            if schedule_changed:
+                st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
 
-        # きたえるーむの注意表示
-        if kitaeroom_name:
-            st.caption("💡 きたえるーむは別の日に移動できますが、常にその日の最後に17:00固定で訪問します。")
+            # きたえるーむの注意表示
+            if kitaeroom_name:
+                st.caption("💡 きたえるーむは別の日に移動できますが、常にその日の最後に17:00固定で訪問します。")
 
-        # スケジュール適用ボタン
-        if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
-            # 新しいday_routesを構築
-            new_day_routes = []
+            # スケジュール適用ボタン
+            if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
+                # 新しいday_routesを構築
+                new_day_routes = []
 
-            for day_idx in range(result_num_days):
-                day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
-                day_names = day_data.get("items", [])
+                for day_idx in range(result_num_days):
+                    day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
+                    day_names = day_data.get("items", [])
 
-                # きたえるーむを除いた訪問先リスト
-                day_indices = []
-                kitaeroom_in_this_day = False
-                for display_name in day_names:
-                    if display_name in global_name_to_idx:
-                        idx = global_name_to_idx[display_name]
-                        # きたえるーむかどうかチェック
-                        if result_name_col and idx < len(result_selected_df):
-                            actual_name = result_selected_df.iloc[idx][result_name_col]
-                            if is_kitaeroom(actual_name):
-                                kitaeroom_in_this_day = True
-                                continue  # 一旦スキップ、後で最後に追加
-                        day_indices.append(idx)
+                    # きたえるーむを除いた訪問先リスト
+                    day_indices = []
+                    kitaeroom_in_this_day = False
+                    for display_name in day_names:
+                        if display_name in global_name_to_idx:
+                            idx = global_name_to_idx[display_name]
+                            # きたえるーむかどうかチェック
+                            if result_name_col and idx < len(result_selected_df):
+                                actual_name = result_selected_df.iloc[idx][result_name_col]
+                                if is_kitaeroom(actual_name):
+                                    kitaeroom_in_this_day = True
+                                    continue  # 一旦スキップ、後で最後に追加
+                            day_indices.append(idx)
 
-                # きたえるーむをこの日の最後に追加
-                if kitaeroom_in_this_day and kitaeroom_idx is not None:
-                    day_indices.append(kitaeroom_idx)
+                    # きたえるーむをこの日の最後に追加
+                    if kitaeroom_in_this_day and kitaeroom_idx is not None:
+                        day_indices.append(kitaeroom_idx)
 
-                new_day_routes.append(day_indices)
+                    new_day_routes.append(day_indices)
 
-            # session_state を更新
-            st.session_state.route_result["day_routes"] = new_day_routes
-            st.success("✅ スケジュールを更新しました！")
-            st.rerun()
+                # session_state を更新
+                st.session_state.route_result["day_routes"] = new_day_routes
+                st.success("✅ スケジュールを更新しました！")
+                st.rerun()
 
         # リセットボタン
         st.markdown("---")

@@ -1348,6 +1348,9 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({actual_lunch_duration}分) {restaurant_name}")
                 total_stay_minutes += actual_lunch_duration
                 lunch_inserted = True  # 30分以上の場合のみ挿入済みとする
+                # 昼食休憩を表示したので、待機時間の重複表示を防ぐ
+                lunch_break_wait = 0
+                lunch_break_adjusted = False
 
         # ============================================
         # きたえるーむ17:00固定ルール

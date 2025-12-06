@@ -2831,7 +2831,7 @@ if map_df is not None and len(map_df) > 0:
 
                     # 昼食休憩の場合は周辺検索リンク
                     if order == "🍽️" or "昼食" in str(location_name):
-                        lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{prev_lat},{prev_lon},15z"
+                        lunch_search_url = f"https://www.google.com/maps/search/食事/@{prev_lat},{prev_lon},15z"
                         st.markdown(f"**🍽️ 昼食休憩** - [🔍 周辺のお店を検索]({lunch_search_url})")
                     else:
                         # 通常の訪問先

@@ -2629,6 +2629,7 @@ if map_df is not None and len(map_df) > 0:
         st.markdown("---")
         st.subheader("🛠️ スケジュール手動調整")
         st.info("ドラッグ＆ドロップで訪問先を別の日に移動したり、順序を変更できます。変更後「スケジュールを適用」ボタンを押してください。")
+        st.warning("⚠️ **表示が空白になった場合**: 「最適ルート計算する」ボタンをもう一度押してください。")
 
         # 各日の訪問先名とインデックスのマッピングを作成
         global_name_to_idx = {}
@@ -2671,13 +2672,29 @@ if map_df is not None and len(map_df) > 0:
         else:
             # ドラッグ＆ドロップUI
             try:
-                # ユニークなキーを生成（day_routesの内容に基づく）
-                key_hash = hash(str(day_routes))
+                # ユニークなキーを生成（より安定したハッシュ）
+                # day_routesの内容とresult_num_daysを組み合わせる
+                key_content = f"{result_num_days}_{len(global_name_to_idx)}_{total_items}"
+                for day_idx, items in enumerate(multi_container_items):
+                    key_content += f"_d{day_idx}:{len(items.get('items', []))}"
+                key_hash = abs(hash(key_content)) % 1000000  # 正の整数に制限
+
                 sorted_multi = sort_items(
                     multi_container_items,
                     multi_containers=True,
                     key=f"sortable_{key_hash}"
                 )
+
+                # sorted_multiが空または不正な場合のチェック
+                if sorted_multi is None or len(sorted_multi) == 0:
+                    st.error("🚨 表示データが空になりました。「最適ルート計算する」ボタンを押して再計算してください。")
+                    raise ValueError("sort_items returned empty data")
+
+                # 全アイテム数をチェック（データが消えていないか）
+                returned_total = sum(len(container.get("items", [])) for container in sorted_multi)
+                if returned_total == 0 and total_items > 0:
+                    st.error("🚨 表示データが空になりました。「最適ルート計算する」ボタンを押して再計算してください。")
+                    raise ValueError("All items disappeared from sort_items")
 
                 # 変更があったかチェック
                 schedule_changed = False

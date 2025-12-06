@@ -97,6 +97,18 @@ st.markdown("""
         border-radius: 10px;
         overflow: hidden;
     }
+
+    /* マルチセレクトのドロップダウンを常に下方向に表示（スマホ対応） */
+    [data-baseweb="popover"] {
+        top: 100% !important;
+        bottom: auto !important;
+    }
+
+    /* ドロップダウンリストの最大高さを制限してスクロール可能に */
+    [data-baseweb="menu"] {
+        max-height: 300px !important;
+        overflow-y: auto !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 

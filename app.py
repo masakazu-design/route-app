@@ -2819,47 +2819,57 @@ if map_df is not None and len(map_df) > 0:
         st.subheader("🚗 ナビで開く（タップで案内開始）")
         st.info("各訪問先をタップするとGoogleマップのナビが起動します")
 
-        for day_num in range(1, result_num_days + 1):
-            day_idx = day_num - 1
-            visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
-
+        for day_num, timetable_df, _ in all_timetables:
             with st.expander(f"📅 {day_num}日目 のナビリンク", expanded=False):
-                # O2本社
-                o2_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
-                st.markdown(f"**1. {O2_HONSHA['name']}（出発）** - [📍 ナビを開く]({o2_nav_url})")
+                # タイムテーブルの順番通りにナビリンクを表示
+                prev_lat = O2_HONSHA["lat"]
+                prev_lon = O2_HONSHA["lon"]
 
-                # 社長宅
-                shacho_nav_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
-                st.markdown(f"**2. {SHACHO_HOME['name']}（ピックアップ）** - [📍 ナビを開く]({shacho_nav_url})")
+                for _, row in timetable_df.iterrows():
+                    location_name = row.get("場所名", "")
+                    order = row.get("順番", "")
 
-                # 訪問先
-                nav_order = 3
-                last_visit_lat = SHACHO_HOME["lat"]  # 昼食検索用（デフォルトは社長宅）
-                last_visit_lon = SHACHO_HOME["lon"]
-                for i in visit_indices:
-                    if i < len(result_selected_df):
-                        row = result_selected_df.iloc[i]
-                        name = row[result_name_col] if result_name_col else f"訪問先{i+1}"
-                        lat = row["lat"]
-                        lon = row["lon"]
-                        nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
-                        st.markdown(f"**{nav_order}. {name}** - [📍 ナビを開く]({nav_url})")
-                        nav_order += 1
-                        last_visit_lat = lat
-                        last_visit_lon = lon
+                    # 昼食休憩の場合は周辺検索リンク
+                    if order == "🍽️" or "昼食" in str(location_name):
+                        lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{prev_lat},{prev_lon},15z"
+                        st.markdown(f"**🍽️ 昼食休憩** - [🔍 周辺のお店を検索]({lunch_search_url})")
+                    else:
+                        # 通常の訪問先
+                        # 座標を取得（固定ロケーションまたは選択された訪問先から）
+                        lat, lon = None, None
 
-                # 昼食休憩（周辺検索）
-                lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{last_visit_lat},{last_visit_lon},15z"
-                st.markdown(f"**🍽️ 昼食休憩** - [🔍 周辺のお店を検索]({lunch_search_url})")
+                        # O2本社
+                        if "O2本社" in str(location_name):
+                            lat, lon = O2_HONSHA["lat"], O2_HONSHA["lon"]
+                        # 直樹さん宅
+                        elif "直樹さん宅" in str(location_name):
+                            lat, lon = SHACHO_HOME["lat"], SHACHO_HOME["lon"]
+                        # 藤沢倉庫
+                        elif "藤沢倉庫" in str(location_name):
+                            lat, lon = FUJISAWA_SOUKO["lat"], FUJISAWA_SOUKO["lon"]
+                        # きたえるーむ
+                        elif "きたえるーむ" in str(location_name):
+                            # きたえるーむは選択された訪問先から探す
+                            for idx, sel_row in result_selected_df.iterrows():
+                                sel_name = sel_row[result_name_col] if result_name_col else ""
+                                if "きたえるーむ" in str(sel_name):
+                                    lat, lon = sel_row["lat"], sel_row["lon"]
+                                    break
+                        else:
+                            # その他の訪問先は名前で検索
+                            for idx, sel_row in result_selected_df.iterrows():
+                                sel_name = sel_row[result_name_col] if result_name_col else ""
+                                if str(sel_name) in str(location_name) or str(location_name) in str(sel_name):
+                                    lat, lon = sel_row["lat"], sel_row["lon"]
+                                    break
 
-                # 社長宅（送り届け）
-                shacho_drop_url = f"https://www.google.com/maps/dir/?api=1&destination={SHACHO_HOME['lat']},{SHACHO_HOME['lon']}&travelmode=driving"
-                st.markdown(f"**{nav_order}. {SHACHO_HOME['name']}（送り届け）** - [📍 ナビを開く]({shacho_drop_url})")
-                nav_order += 1
-
-                # O2本社（帰着）
-                o2_return_url = f"https://www.google.com/maps/dir/?api=1&destination={O2_HONSHA['lat']},{O2_HONSHA['lon']}&travelmode=driving"
-                st.markdown(f"**{nav_order}. {O2_HONSHA['name']}（帰着）** - [📍 ナビを開く]({o2_return_url})")
+                        if lat is not None and lon is not None:
+                            nav_url = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}&travelmode=driving"
+                            st.markdown(f"**{order}. {location_name}** - [📍 ナビを開く]({nav_url})")
+                            prev_lat, prev_lon = lat, lon
+                        else:
+                            # 座標が見つからない場合は表示のみ
+                            st.markdown(f"**{order}. {location_name}**")
 
         # 地図表示
         st.subheader("🗺️ 全日程ルート地図")

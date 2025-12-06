@@ -2281,7 +2281,7 @@ if map_df is not None and len(map_df) > 0:
         if actual_work_hours > limit_hours:
             over_hours = actual_work_hours - limit_hours
             st.warning(f"⚠️ **定時（{WORK_HOURS_PER_DAY:.0f}時間/日）を超過しています**\n\n"
-                      f"総拘束時間: {total_hours:.1f}時間 - 休憩時間: {break_hours:.1f}時間 = 実労働時間: {actual_work_hours:.1f}時間\n\n"
+                      f"総所要時間: {total_hours:.1f}時間 - 休憩時間: {break_hours:.1f}時間 = 実労働時間: {actual_work_hours:.1f}時間\n\n"
                       f"定時を **約 {over_hours:.1f} 時間** 超過しています。\n"
                       f"早出・残業で調整するか、日数を増やしてください。")
         else:

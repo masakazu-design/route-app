@@ -2348,7 +2348,7 @@ if map_df is not None and len(map_df) > 0:
             if start_time.hour < 6:
                 advices_critical.append(
                     f"**【早朝出発】** 出発が **{format_time(start_time)}** です。\n\n"
-                    f"👉 遠方の訪問先を他の日に移動することを検討してください。"
+                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
             elif start_time.hour < 7:
                 advices_warning.append(
@@ -2359,7 +2359,7 @@ if map_df is not None and len(map_df) > 0:
             if end_time.hour >= 20:
                 advices_critical.append(
                     f"**【帰りが遅い】** 終了が **{format_time(end_time)}** です。\n\n"
-                    f"👉 日数を増やすか、訪問先を他の日に移動してください。"
+                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
             elif end_time.hour >= 18:
                 advices_warning.append(

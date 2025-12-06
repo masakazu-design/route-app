@@ -1746,10 +1746,12 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             # 昼食終了時刻は次の訪問先到着時刻に合わせる（調整後）
             lunch_end = arrival
             # 昼食開始時刻 = 前の訪問終了時刻（current_time）
-            # 移動時間も含めて「移動・昼食休憩」として表示
+            # ただし、昼食開始は最低11:30以降とする
             lunch_start = current_time
+            if lunch_start < lunch_check_time:
+                lunch_start = lunch_check_time
 
-            # 実際の休憩時間（移動+昼食）
+            # 実際の休憩時間（昼食開始から終了まで）
             actual_lunch_duration = int((lunch_end - lunch_start).total_seconds() / 60)
 
             # 昼食時間が30分以上確保できる場合のみ挿入

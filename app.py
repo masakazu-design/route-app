@@ -180,12 +180,12 @@ FUJISAWA_SOUKO = {
 O2_TO_FUJISAWA_SECONDS = 600  # 10分
 FUJISAWA_TO_KITAEROOM_SECONDS = 900  # 15分（藤沢倉庫→きたえるーむ）
 
-# 社長宅
+# 直樹さん宅
 SHACHO_HOME = {
-    "name": "社長宅",
+    "name": "直樹さん宅",
     "lat": 39.28791,
     "lon": 141.11858,
-    "stay_min": 5
+    "stay_min": 0
 }
 
 # 時間設定
@@ -312,6 +312,15 @@ def is_same_location(name1, name2):
     base1 = get_base_location_name(name1)
     base2 = get_base_location_name(name2)
     return base1 == base2 and base1 != ""
+
+
+def is_fixed_location(location_name):
+    """固定ロケーションかどうかを判定（O2本社、藤沢倉庫、きたえるーむ等）"""
+    name = str(location_name)
+    for key in FIXED_LOCATIONS.keys():
+        if key in name:
+            return True
+    return False
 
 
 def is_office_location(location_name):
@@ -1471,7 +1480,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
     calendar_text.append(f"{format_time(o2_departure)}〜{format_time(o2_departure)} {O2_HONSHA['name']} 出発")
     order += 1
 
-    # 2. 社長宅（ピックアップ）
+    # 2. 直樹さん宅（ピックアップ）
     timetable.append({
         "順番": order,
         "場所名": f"{SHACHO_HOME['name']}（ピックアップ）",
@@ -1480,9 +1489,9 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "滞在時間(分)": SHACHO_HOME["stay_min"],
         "移動時間(分)": o2_to_shacho_min,
         "待機時間(分)": 0,
-        "備考": "社長同乗"
+        "備考": "直樹さん同乗"
     })
-    calendar_text.append(f"{format_time(shacho_arrival)}〜{format_time(shacho_departure)}（滞在{SHACHO_HOME['stay_min']}分） {SHACHO_HOME['name']}（社長同乗） 【移動: {o2_to_shacho_min}分】")
+    calendar_text.append(f"{format_time(shacho_arrival)}〜{format_time(shacho_departure)} {SHACHO_HOME['name']}（直樹さん同乗） 【移動: {o2_to_shacho_min}分】")
     order += 1
 
     # 3. 訪問先リスト
@@ -1490,6 +1499,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
     lunch_inserted = False
     total_travel_seconds = o2_to_shacho_time + shacho_to_first_time
     total_stay_minutes = SHACHO_HOME["stay_min"]
+    first_regular_visit_done = False  # 最初の通常訪問先（固定ロケーション以外）の打ち合わせ済みフラグ
 
     for i, visit_idx in enumerate(filtered_visit_indices):
         if name_col:
@@ -1622,8 +1632,11 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 remark = f"💡 {wait_minutes}分待機（17:00固定）"
             # 17:00を過ぎている場合は待機なし（なりゆきの到着時刻で開始）
 
-        if i == 0:
-            # 1件目の場合（きたえるーむでも適用後の時刻で処理）
+        # 最初の通常訪問先（固定ロケーション以外）で打ち合わせを行う
+        is_first_regular = not first_regular_visit_done and not is_fixed_location(point_name)
+
+        if is_first_regular:
+            # 最初の通常訪問先の場合（きたえるーむでも適用後の時刻で処理）
             # 打ち合わせは事務所のみで行う（現場のみの場合はスキップ）
             should_have_meeting = is_office_location(point_name)
 
@@ -1646,13 +1659,13 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "到着時刻": format_time(arrival),
                     "出発時刻": format_time(meeting_end),
                     "滞在時間(分)": MEETING_DURATION,
-                    "移動時間(分)": shacho_to_first_min,
+                    "移動時間(分)": travel_min,
                     "待機時間(分)": total_wait,
                     "備考": first_remark
                 })
 
                 wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
-                calendar_text.append(f"{format_time(arrival)}〜{format_time(meeting_end)}（滞在{MEETING_DURATION}分） {point_name}（打合せ） 【移動: {shacho_to_first_min}分】{wait_info}")
+                calendar_text.append(f"{format_time(arrival)}〜{format_time(meeting_end)}（滞在{MEETING_DURATION}分） {point_name}（打合せ） 【移動: {travel_min}分】{wait_info}")
                 total_stay_minutes += MEETING_DURATION + total_wait
 
                 work_start = meeting_end
@@ -1686,14 +1699,16 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "到着時刻": format_time(arrival),
                     "出発時刻": format_time(departure),
                     "滞在時間(分)": stay_duration,
-                    "移動時間(分)": shacho_to_first_min,
+                    "移動時間(分)": travel_min,
                     "待機時間(分)": total_wait,
                     "備考": first_remark
                 })
 
                 wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
-                calendar_text.append(f"{format_time(arrival)}〜{format_time(departure)}（滞在{stay_duration}分） {point_name} 【移動: {shacho_to_first_min}分】{wait_info}")
+                calendar_text.append(f"{format_time(arrival)}〜{format_time(departure)}（滞在{stay_duration}分） {point_name} 【移動: {travel_min}分】{wait_info}")
                 total_stay_minutes += stay_duration + total_wait
+
+            first_regular_visit_done = True  # 打ち合わせ済みフラグを立てる
         else:
             # 2件目以降
             departure = arrival + timedelta(minutes=stay_duration)
@@ -1783,7 +1798,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
 
         lunch_inserted = True
 
-    # 4. 社長宅（送り届け）
+    # 4. 直樹さん宅（送り届け）
     shacho_return_departure = shacho_return_arrival + timedelta(minutes=SHACHO_HOME["stay_min"])
 
     timetable.append({
@@ -1794,9 +1809,9 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         "滞在時間(分)": SHACHO_HOME["stay_min"],
         "移動時間(分)": last_to_shacho_min,
         "待機時間(分)": 0,
-        "備考": "社長降車"
+        "備考": "直樹さん降車"
     })
-    calendar_text.append(f"{format_time(shacho_return_arrival)}〜{format_time(shacho_return_departure)}（滞在{SHACHO_HOME['stay_min']}分） {SHACHO_HOME['name']}（社長降車） 【移動: {last_to_shacho_min}分】")
+    calendar_text.append(f"{format_time(shacho_return_arrival)}〜{format_time(shacho_return_departure)} {SHACHO_HOME['name']}（直樹さん降車） 【移動: {last_to_shacho_min}分】")
     total_stay_minutes += SHACHO_HOME["stay_min"]
     order += 1
 

@@ -1581,14 +1581,14 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 move_time_min = travel_min
 
                 # 表示名を決定
-                if move_time_min > 10:
-                    restaurant_name = "移動・昼食休憩"
+                if move_time_min > 0:
+                    restaurant_name = f"（60分）昼食休憩【移動：{move_time_min}分】"
                 else:
-                    restaurant_name = "昼食休憩"
+                    restaurant_name = f"（60分）昼食休憩"
                     if api_key:
                         restaurants, _ = find_nearby_restaurant(prev_lat, prev_lon, api_key)
                         if restaurants:
-                            restaurant_name = f"昼食：{restaurants[0]['name']}"
+                            restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
                 timetable.append({
                     "順番": "🍽️",
@@ -1600,7 +1600,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "待機時間(分)": 0,
                     "備考": "昼食休憩"
                 })
-                calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)}（{actual_lunch_duration}分） {restaurant_name}")
+                calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
                 total_stay_minutes += actual_lunch_duration
                 lunch_inserted = True  # 30分以上の場合のみ挿入済みとする
                 # 昼食休憩を表示したので、待機時間の重複表示を防ぐ
@@ -1759,14 +1759,14 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
             last_lon = visit_df.iloc[last_visit_idx]["lon"]
 
             # 表示名を決定
-            if last_to_shacho_min > 10:
-                restaurant_name = "移動・昼食休憩"
+            if last_to_shacho_min > 0:
+                restaurant_name = f"（60分）昼食休憩【移動：{last_to_shacho_min}分】"
             else:
-                restaurant_name = "昼食休憩"
+                restaurant_name = f"（60分）昼食休憩"
                 if api_key:
                     restaurants, _ = find_nearby_restaurant(last_lat, last_lon, api_key)
                     if restaurants:
-                        restaurant_name = f"昼食：{restaurants[0]['name']}"
+                        restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
             timetable.append({
                 "順番": "🍽️",
@@ -1778,7 +1778,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 "待機時間(分)": 0,
                 "備考": "昼食休憩"
             })
-            calendar_text.append(f"{format_time(lunch_start)} - {format_time(lunch_end)} ({actual_lunch_duration}分) {restaurant_name}")
+            calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
             total_stay_minutes += actual_lunch_duration
 
         lunch_inserted = True

@@ -892,7 +892,9 @@ def global_tsp_time_slice_allocation(
         elif is_genba_only(point_name):
             location_groups[base_name]["genbas"].append(idx)
         else:
-            # 事務所でも現場でもない場合（通常の訪問先）
+            # 事務所でも現場でもない場合（O2グループ、発注先など）
+            # officesリストに追加して展開時に出力されるようにする
+            location_groups[base_name]["offices"].append(idx)
             if location_groups[base_name]["representative_idx"] is None:
                 location_groups[base_name]["representative_idx"] = idx
 

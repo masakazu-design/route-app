@@ -754,7 +754,7 @@ def solve_vrp_multi_day(time_matrix, num_days, depot_idx=0, stay_times=None):
 
 
 def solve_tsp_optimal_order(time_matrix, depot_idx=0):
-    """TSPで最適な巡回順序を1本計算"""
+    """TSPで最適な巡回順序を1本計算（燃費重視・最短距離優先）"""
     n = len(time_matrix)
 
     if n <= 1:
@@ -774,26 +774,44 @@ def solve_tsp_optimal_order(time_matrix, depot_idx=0):
     transit_callback_index = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
 
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = (
-        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-    )
-    search_parameters.local_search_metaheuristic = (
-        routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    )
-    search_parameters.time_limit.seconds = 15
+    # 複数の戦略で解を求め、最良のものを選択
+    best_route = None
+    best_cost = float('inf')
 
-    solution = routing.SolveWithParameters(search_parameters)
+    strategies = [
+        (routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC,
+         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH),
+        (routing_enums_pb2.FirstSolutionStrategy.CHRISTOFIDES,
+         routing_enums_pb2.LocalSearchMetaheuristic.SIMULATED_ANNEALING),
+        (routing_enums_pb2.FirstSolutionStrategy.SAVINGS,
+         routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH),
+    ]
 
-    if solution:
-        route = []
-        index = routing.Start(0)
-        while not routing.IsEnd(index):
-            node = manager.IndexToNode(index)
-            if node != depot_idx:
-                route.append(node)
-            index = solution.Value(routing.NextVar(index))
-        return route
+    for first_strategy, local_search in strategies:
+        search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+        search_parameters.first_solution_strategy = first_strategy
+        search_parameters.local_search_metaheuristic = local_search
+        search_parameters.time_limit.seconds = 10
+
+        solution = routing.SolveWithParameters(search_parameters)
+
+        if solution:
+            # 総コストを計算
+            total_cost = solution.ObjectiveValue()
+
+            if total_cost < best_cost:
+                best_cost = total_cost
+                route = []
+                index = routing.Start(0)
+                while not routing.IsEnd(index):
+                    node = manager.IndexToNode(index)
+                    if node != depot_idx:
+                        route.append(node)
+                    index = solution.Value(routing.NextVar(index))
+                best_route = route
+
+    if best_route:
+        return best_route
     else:
         # フォールバック: depot以外を順番に
         return [i for i in range(n) if i != depot_idx]

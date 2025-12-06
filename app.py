@@ -305,6 +305,54 @@ def is_same_location(name1, name2):
     return base1 == base2 and base1 != ""
 
 
+def is_office_location(location_name):
+    """事務所かどうかを判定（事務所・現場も事務所として扱う）"""
+    name = str(location_name)
+    return "事務所" in name
+
+
+def is_genba_only(location_name):
+    """現場のみ（事務所を含まない）かどうかを判定"""
+    name = str(location_name)
+    return "現場" in name and "事務所" not in name
+
+
+def reorder_office_genba_pairs(route_indices, visit_df, name_col):
+    """
+    ルート内の同一場所ペアを事務所→現場の順に並べ替える
+
+    Args:
+        route_indices: 訪問先インデックスのリスト
+        visit_df: 訪問先データフレーム
+        name_col: 名前カラム名
+
+    Returns:
+        並べ替え後のインデックスリスト
+    """
+    if not route_indices or not name_col:
+        return route_indices
+
+    result = list(route_indices)
+    i = 0
+
+    while i < len(result) - 1:
+        current_idx = result[i]
+        next_idx = result[i + 1]
+
+        current_name = visit_df.iloc[current_idx][name_col]
+        next_name = visit_df.iloc[next_idx][name_col]
+
+        # 同じ場所のペアかどうかチェック
+        if is_same_location(current_name, next_name):
+            # 現場→事務所の順になっていたら入れ替え
+            if is_genba_only(current_name) and is_office_location(next_name):
+                result[i], result[i + 1] = result[i + 1], result[i]
+
+        i += 1
+
+    return result
+
+
 def overlaps_forbidden_lunch_time(arrival_time, departure_time):
     """
     訪問時間帯が昼休み禁止時間帯（12:00-13:00）と重なるかを判定
@@ -1177,10 +1225,10 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         return pd.DataFrame(), "", []
 
     # ============================================
-    # 訪問先リストをそのまま使用
+    # 訪問先リストを事務所→現場の順に並べ替え
     # （Gap Filling移動は optimize_gap_filling_moves で事前処理済み）
     # ============================================
-    filtered_visit_indices = list(visit_indices)
+    filtered_visit_indices = reorder_office_genba_pairs(list(visit_indices), visit_df, name_col)
 
     if not filtered_visit_indices:
         return pd.DataFrame(), "", []
@@ -1369,47 +1417,76 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
 
         if i == 0:
             # 1件目の場合（きたえるーむでも適用後の時刻で処理）
-            meeting_end = arrival + timedelta(minutes=MEETING_DURATION)
+            # 打ち合わせは事務所のみで行う（現場のみの場合はスキップ）
+            should_have_meeting = is_office_location(point_name)
 
             # 待機時間を合算（きたえるーむ待機 + 昼休み待機）
             total_wait = wait_minutes + lunch_break_wait
 
-            first_remark = "現場打ち合わせ"
-            if lunch_break_adjusted:
-                first_remark = f"🍽️ 昼休み{lunch_break_wait}分待機後、打ち合わせ"
-            elif wait_minutes > 0:
-                first_remark = f"💡 {wait_minutes}分待機後、打ち合わせ"
+            if should_have_meeting:
+                # 事務所の場合：打ち合わせ + 点検開始
+                meeting_end = arrival + timedelta(minutes=MEETING_DURATION)
 
-            timetable.append({
-                "順番": f"★{order}",
-                "場所名": f"{point_name}（打合せ）",
-                "到着時刻": format_time(arrival),
-                "出発時刻": format_time(meeting_end),
-                "滞在時間(分)": MEETING_DURATION,
-                "移動時間(分)": shacho_to_first_min,
-                "待機時間(分)": total_wait,
-                "備考": first_remark
-            })
+                first_remark = "現場打ち合わせ"
+                if lunch_break_adjusted:
+                    first_remark = f"🍽️ 昼休み{lunch_break_wait}分待機後、打ち合わせ"
+                elif wait_minutes > 0:
+                    first_remark = f"💡 {wait_minutes}分待機後、打ち合わせ"
 
-            wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
-            calendar_text.append(f"{format_time(arrival)} - {format_time(meeting_end)} ({MEETING_DURATION}分) {point_name}（打合せ） 【移動: {shacho_to_first_min}分】{wait_info}")
-            total_stay_minutes += MEETING_DURATION + total_wait
+                timetable.append({
+                    "順番": f"★{order}",
+                    "場所名": f"{point_name}（打合せ）",
+                    "到着時刻": format_time(arrival),
+                    "出発時刻": format_time(meeting_end),
+                    "滞在時間(分)": MEETING_DURATION,
+                    "移動時間(分)": shacho_to_first_min,
+                    "待機時間(分)": total_wait,
+                    "備考": first_remark
+                })
 
-            work_start = meeting_end
-            work_end = work_start + timedelta(minutes=stay_duration)
-            timetable.append({
-                "順番": order,
-                "場所名": f"{point_name}（点検開始）",
-                "到着時刻": format_time(work_start),
-                "出発時刻": format_time(work_end),
-                "滞在時間(分)": stay_duration,
-                "移動時間(分)": 0,
-                "待機時間(分)": 0,
-                "備考": ""
-            })
-            calendar_text.append(f"{format_time(work_start)} - {format_time(work_end)} ({stay_duration}分) {point_name}（点検開始）")
-            total_stay_minutes += stay_duration
-            departure = work_end
+                wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
+                calendar_text.append(f"{format_time(arrival)} - {format_time(meeting_end)} ({MEETING_DURATION}分) {point_name}（打合せ） 【移動: {shacho_to_first_min}分】{wait_info}")
+                total_stay_minutes += MEETING_DURATION + total_wait
+
+                work_start = meeting_end
+                work_end = work_start + timedelta(minutes=stay_duration)
+                timetable.append({
+                    "順番": order,
+                    "場所名": f"{point_name}（点検開始）",
+                    "到着時刻": format_time(work_start),
+                    "出発時刻": format_time(work_end),
+                    "滞在時間(分)": stay_duration,
+                    "移動時間(分)": 0,
+                    "待機時間(分)": 0,
+                    "備考": ""
+                })
+                calendar_text.append(f"{format_time(work_start)} - {format_time(work_end)} ({stay_duration}分) {point_name}（点検開始）")
+                total_stay_minutes += stay_duration
+                departure = work_end
+            else:
+                # 現場のみの場合：打ち合わせなしで通常の訪問
+                departure = arrival + timedelta(minutes=stay_duration)
+
+                first_remark = ""
+                if lunch_break_adjusted:
+                    first_remark = f"🍽️ 昼休み{lunch_break_wait}分待機（13:00～）"
+                elif wait_minutes > 0:
+                    first_remark = f"💡 {wait_minutes}分待機"
+
+                timetable.append({
+                    "順番": f"★{order}",
+                    "場所名": point_name,
+                    "到着時刻": format_time(arrival),
+                    "出発時刻": format_time(departure),
+                    "滞在時間(分)": stay_duration,
+                    "移動時間(分)": shacho_to_first_min,
+                    "待機時間(分)": total_wait,
+                    "備考": first_remark
+                })
+
+                wait_info = f"【待機: {total_wait}分】" if total_wait > 0 else ""
+                calendar_text.append(f"{format_time(arrival)} - {format_time(departure)} ({stay_duration}分) {point_name} 【移動: {shacho_to_first_min}分】{wait_info}")
+                total_stay_minutes += stay_duration + total_wait
         else:
             # 2件目以降
             departure = arrival + timedelta(minutes=stay_duration)

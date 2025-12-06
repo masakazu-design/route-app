@@ -2341,27 +2341,41 @@ if map_df is not None and len(map_df) > 0:
             start_time = metrics["start_time"]
             end_time = metrics["end_time"]
 
-            advices = []
+            advices_critical = []  # 重大な問題
+            advices_warning = []   # 注意
 
             # 出発時刻チェック
             if start_time.hour < 6:
-                advices.append(f"🌙 出発が{format_time(start_time)}と早朝です。訪問先を他の日に移動することを検討してください。")
+                advices_critical.append(
+                    f"**【早朝出発】** 出発が **{format_time(start_time)}** です。\n\n"
+                    f"👉 遠方の訪問先を他の日に移動することを検討してください。"
+                )
             elif start_time.hour < 7:
-                advices.append(f"⏰ 出発が{format_time(start_time)}と早めです。")
+                advices_warning.append(
+                    f"**【早めの出発】** 出発が **{format_time(start_time)}** です。"
+                )
 
             # 終了時刻チェック
             if end_time.hour >= 20:
-                advices.append(f"🚨 終了が{format_time(end_time)}と遅いです！日数を増やすか、訪問先を他の日に移動してください。")
+                advices_critical.append(
+                    f"**【帰りが遅い】** 終了が **{format_time(end_time)}** です。\n\n"
+                    f"👉 日数を増やすか、訪問先を他の日に移動してください。"
+                )
             elif end_time.hour >= 18:
-                advices.append(f"🌆 終了が{format_time(end_time)}です。帰りが遅くなります。")
+                advices_warning.append(
+                    f"**【帰りが遅め】** 終了が **{format_time(end_time)}** です。"
+                )
 
-            # アドバイスを表示
-            if advices:
-                for advice in advices:
-                    if "🚨" in advice or "🌙" in advice:
-                        st.error(advice)
-                    else:
-                        st.warning(advice)
+            # アドバイスを目立つボックスで表示
+            if advices_critical:
+                st.markdown("---")
+                for advice in advices_critical:
+                    st.error(f"🚨 {advice}")
+                st.markdown("---")
+
+            if advices_warning:
+                for advice in advices_warning:
+                    st.warning(f"⚠️ {advice}")
 
             # 列の並び順を整理
             column_order = ["順番", "到着時刻", "出発時刻", "滞在時間(分)", "移動時間(分)", "待機時間(分)", "場所名", "備考"]

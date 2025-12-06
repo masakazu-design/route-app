@@ -116,9 +116,13 @@ st.markdown("""
 # 定数定義
 # ========================================
 
-# API設定（Streamlit Secretsから取得）
-DEFAULT_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
-DEFAULT_MAP_ID = st.secrets.get("GOOGLE_MAP_ID", "")
+# API設定（Streamlit Secretsから取得、ローカル開発時はデフォルト値）
+try:
+    DEFAULT_API_KEY = st.secrets.get("GOOGLE_MAPS_API_KEY", "")
+    DEFAULT_MAP_ID = st.secrets.get("GOOGLE_MAP_ID", "")
+except Exception:
+    DEFAULT_API_KEY = ""
+    DEFAULT_MAP_ID = ""
 
 # 稼働時間設定（固定）
 WORK_HOURS_PER_DAY = 8.0
@@ -978,15 +982,16 @@ def global_tsp_time_slice_allocation(
             tsp_order.append(genba_idx)
 
     # ============================================
-    # Step 3: きたえるーむを最後尾に追加
+    # Step 3: きたえるーむは後で配置（Time Slicing後に最適な日に追加）
     # ============================================
-    tsp_order.extend(kitaeroom_indices)
+    # きたえるーむはTime Slicing後に、17:00に訪問可能な日に配置する
 
     if not tsp_order:
-        return [[] for _ in range(num_days)]
+        # きたえるーむのみの場合は1日目に配置
+        return [kitaeroom_indices] + [[] for _ in range(num_days - 1)]
 
     # ============================================
-    # Step 3: Time Slicing（時間シミュレーションで日程分割）
+    # Step 4: Time Slicing（時間シミュレーションで日程分割）
     # ============================================
     day_routes = [[] for _ in range(num_days)]
     current_day = 0
@@ -1071,6 +1076,88 @@ def global_tsp_time_slice_allocation(
     if cursor < len(tsp_order):
         remaining = tsp_order[cursor:]
         day_routes[num_days - 1].extend(remaining)
+
+    # ============================================
+    # Step 5: きたえるーむを17:00に訪問可能な日に配置
+    # ============================================
+    if kitaeroom_indices:
+        # きたえるーむの滞在時間
+        kitaeroom_stay = FIXED_LOCATIONS.get("きたえるーむ", {}).get("stay_min", 15)
+
+        # 各日の最終訪問先からの終了予定時刻を計算
+        # きたえるーむを17:00に訪問した場合の終了時刻が制限内か確認
+        kitaeroom_target = datetime.combine(
+            datetime.today(),
+            datetime.strptime(KITAEROOM_RECOMMENDED_TIME, "%H:%M").time()
+        )
+
+        end_limit = datetime.combine(
+            datetime.today(),
+            datetime.strptime(f"{daily_end_limit_hour}:{daily_end_limit_minute:02d}", "%H:%M").time()
+        )
+
+        # きたえるーむ訪問後の帰路時間を計算
+        # きたえるーむ → 社長宅 → O2本社
+        # きたえるーむのMatrix Index（FIXED_LOCATIONS経由で推定）
+        # 実際のmatrix indexは不明なので、概算で計算
+        # 約10分（きたえるーむ→社長宅） + 5分滞在 + 6分（社長宅→O2本社）= 約21分
+        kitaeroom_to_end_minutes = 21  # 概算
+
+        # きたえるーむ17:00訪問時の終了予定時刻
+        kitaeroom_end_time = kitaeroom_target + timedelta(minutes=kitaeroom_stay + kitaeroom_to_end_minutes)
+
+        # 訪問がある日の中で、17:00訪問が可能な最も遅い日を探す
+        best_day = -1
+        for day_idx in range(num_days - 1, -1, -1):  # 後ろから探す
+            if day_routes[day_idx]:  # その日に訪問がある
+                # その日の最後の訪問終了時刻を計算
+                day_visits = day_routes[day_idx]
+                last_visit_idx = day_visits[-1]
+
+                # シミュレーションで最後の訪問の出発時刻を計算
+                sim_time = datetime.combine(
+                    datetime.today(),
+                    datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time()
+                )
+
+                for i, visit_idx in enumerate(day_visits):
+                    if name_col and visit_df is not None:
+                        point_name = visit_df.iloc[visit_idx][name_col]
+                    else:
+                        point_name = f"訪問先{visit_idx + 1}"
+
+                    layer = visit_df.iloc[visit_idx].get("layer", None) if visit_df is not None and "layer" in visit_df.columns else None
+                    stay = get_stay_duration(point_name, layer, None)
+
+                    if i == 0:
+                        # 最初の訪問は打ち合わせ時間も加算
+                        sim_time = sim_time + timedelta(minutes=MEETING_DURATION + stay)
+                    else:
+                        # 移動時間を加算
+                        prev_idx = day_visits[i - 1]
+                        travel = time_matrix_all[prev_idx + 2][visit_idx + 2]
+                        sim_time = sim_time + timedelta(seconds=travel) + timedelta(minutes=stay)
+
+                last_departure = sim_time
+
+                # この日の最後の訪問終了時刻が17:00より前なら、きたえるーむを17:00に訪問可能
+                # また、きたえるーむ訪問後の終了時刻が制限内であること
+                if last_departure <= kitaeroom_target and kitaeroom_end_time <= end_limit:
+                    best_day = day_idx
+                    break  # 最も遅い可能な日が見つかった
+
+        # 最適な日が見つかった場合はその日に追加、見つからない場合は訪問がある最後の日に追加
+        if best_day >= 0:
+            day_routes[best_day].extend(kitaeroom_indices)
+        else:
+            # 訪問がある最後の日を探す
+            for day_idx in range(num_days - 1, -1, -1):
+                if day_routes[day_idx]:
+                    day_routes[day_idx].extend(kitaeroom_indices)
+                    break
+            else:
+                # どの日も訪問がない場合は1日目に追加
+                day_routes[0].extend(kitaeroom_indices)
 
     return day_routes
 

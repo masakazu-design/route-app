@@ -1773,6 +1773,9 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                         if restaurants:
                             restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
+                # 周辺飲食店検索URL
+                lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{prev_lat},{prev_lon},15z"
+
                 timetable.append({
                     "順番": "🍽️",
                     "場所名": restaurant_name,
@@ -1781,7 +1784,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     "滞在時間(分)": actual_lunch_duration,
                     "移動時間(分)": move_time_min,
                     "待機時間(分)": 0,
-                    "備考": "昼食休憩"
+                    "備考": f"[📍周辺を検索]({lunch_search_url})"
                 })
                 calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
                 total_stay_minutes += actual_lunch_duration
@@ -1956,6 +1959,9 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                     if restaurants:
                         restaurant_name = f"昼食：{restaurants[0]['name']}（{actual_lunch_duration}分）"
 
+            # 周辺飲食店検索URL
+            lunch_search_url = f"https://www.google.com/maps/search/レストラン/@{last_lat},{last_lon},15z"
+
             timetable.append({
                 "順番": "🍽️",
                 "場所名": restaurant_name,
@@ -1964,7 +1970,7 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
                 "滞在時間(分)": actual_lunch_duration,
                 "移動時間(分)": last_to_shacho_min,
                 "待機時間(分)": 0,
-                "備考": "昼食休憩"
+                "備考": f"[📍周辺を検索]({lunch_search_url})"
             })
             calendar_text.append(f"{format_time(lunch_start)}〜{format_time(lunch_end)} {restaurant_name}")
             total_stay_minutes += actual_lunch_duration

@@ -189,7 +189,8 @@ SHACHO_HOME = {
 }
 
 # 時間設定
-FIRST_VISIT_ARRIVAL_TIME = "08:00"
+FIRST_VISIT_MIN_ARRIVAL_TIME = "08:00"  # 最初の訪問先への最早到着時刻
+DEPARTURE_MIN_TIME = "07:00"  # 出発の最早時刻
 MEETING_DURATION = 10
 LUNCH_START_HOUR = 11
 LUNCH_START_MINUTE = 30
@@ -347,6 +348,21 @@ def is_genba_only(location_name):
     """現場のみ（事務所を含まない）かどうかを判定"""
     name = str(location_name)
     return "現場" in name and "事務所" not in name
+
+
+def can_have_meeting(location_name, layer=None):
+    """打ち合わせ可能な場所かどうかを判定
+    - 発注先レイヤーは打ち合わせ不可
+    - 事務所、O2グループ、施工中工事は打ち合わせ可能
+    - 現場のみでも最初の訪問なら打ち合わせ可能
+    """
+    # 発注先レイヤーは打ち合わせ不可
+    if layer:
+        layer_normalized = normalize_text(layer)
+        if "発注先" in layer_normalized:
+            return False
+    # それ以外は打ち合わせ可能
+    return True
 
 
 def reorder_office_genba_pairs(route_indices, visit_df, name_col):
@@ -1023,11 +1039,26 @@ def global_tsp_time_slice_allocation(
     while cursor < len(tsp_order) and current_day < num_days:
         day_visits = []
 
-        # その日の開始時刻（最初の訪問先に08:00着）
-        first_visit_arrival = datetime.combine(
-            datetime.today(),
-            datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time()
-        )
+        # その日の最初の訪問先への到着時刻を計算
+        first_candidate_idx = tsp_order[cursor]
+        first_candidate_matrix_idx = first_candidate_idx + 2
+        shacho_to_first = time_matrix_all[shacho_idx][first_candidate_matrix_idx]
+        o2_to_shacho = time_matrix_all[o2_idx][shacho_idx]
+
+        min_departure = datetime.combine(datetime.today(),
+                                         datetime.strptime(DEPARTURE_MIN_TIME, "%H:%M").time())
+        min_arrival = datetime.combine(datetime.today(),
+                                       datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
+
+        # 7:00出発時の到着時刻を計算
+        total_travel = o2_to_shacho + SHACHO_HOME["stay_min"] * 60 + shacho_to_first
+        calculated_arrival = min_departure + timedelta(seconds=total_travel)
+
+        # 到着時刻が8:00より早い場合は8:00に調整
+        if calculated_arrival < min_arrival:
+            first_visit_arrival = min_arrival
+        else:
+            first_visit_arrival = calculated_arrival
 
         # 終了時刻の上限
         end_limit = datetime.combine(
@@ -1137,10 +1168,19 @@ def global_tsp_time_slice_allocation(
             day_visits = day_routes[day_idx]
 
             # シミュレーションで最後の訪問の出発時刻を計算
-            sim_time = datetime.combine(
-                datetime.today(),
-                datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time()
-            )
+            # 最初の訪問先への到着時刻を計算
+            first_idx = day_visits[0]
+            first_matrix_idx = first_idx + 2
+            shacho_to_first_sim = time_matrix_all[shacho_idx][first_matrix_idx]
+            o2_to_shacho_sim = time_matrix_all[o2_idx][shacho_idx]
+
+            min_dep = datetime.combine(datetime.today(),
+                                       datetime.strptime(DEPARTURE_MIN_TIME, "%H:%M").time())
+            min_arr = datetime.combine(datetime.today(),
+                                       datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
+            total_travel_sim = o2_to_shacho_sim + SHACHO_HOME["stay_min"] * 60 + shacho_to_first_sim
+            calc_arrival = min_dep + timedelta(seconds=total_travel_sim)
+            sim_time = max(calc_arrival, min_arr)
 
             for i, visit_idx in enumerate(day_visits):
                 if name_col and visit_df is not None:
@@ -1303,10 +1343,19 @@ def optimize_gap_filling_moves(day_routes, visit_df, time_matrix_all, o2_idx, sh
     route_with_kitaeroom = optimized_routes[kitaeroom_day]
 
     # きたえるーむの直前までのスケジュールをシミュレーション
-    first_visit_arrival = datetime.combine(
-        datetime.today(),
-        datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time()
-    )
+    # 最初の訪問先への到着時刻を計算
+    first_visit_idx = route_with_kitaeroom[0]
+    first_visit_matrix_idx_gap = first_visit_idx + 2
+    shacho_to_first_gap = time_matrix_all[shacho_idx][first_visit_matrix_idx_gap]
+    o2_to_shacho_gap = time_matrix_all[o2_idx][shacho_idx]
+
+    min_departure_gap = datetime.combine(datetime.today(),
+                                         datetime.strptime(DEPARTURE_MIN_TIME, "%H:%M").time())
+    min_arrival_gap = datetime.combine(datetime.today(),
+                                       datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
+    total_travel_gap = o2_to_shacho_gap + SHACHO_HOME["stay_min"] * 60 + shacho_to_first_gap
+    calculated_arrival_gap = min_departure_gap + timedelta(seconds=total_travel_gap)
+    first_visit_arrival = max(calculated_arrival_gap, min_arrival_gap)
 
     current_time = first_visit_arrival
     prev_matrix_idx = shacho_idx
@@ -1458,18 +1507,100 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
         return pd.DataFrame(), "", []
 
     # ============================================
-    # 訪問先リストをそのまま使用
-    # （TSP計算時に同一場所を統合し、事務所→現場の順で展開済み）
+    # 訪問先リストを事務所→現場の順に並べ替え
     # ============================================
-    filtered_visit_indices = list(visit_indices)
+    filtered_visit_indices = reorder_office_genba_pairs(list(visit_indices), visit_df, name_col)
 
-    first_visit_arrival = datetime.combine(datetime.today(),
-                                           datetime.strptime(FIRST_VISIT_ARRIVAL_TIME, "%H:%M").time())
     first_visit_matrix_idx = filtered_visit_indices[0] + 2
 
     shacho_to_first_time = time_matrix_all[shacho_idx][first_visit_matrix_idx]
     o2_to_shacho_time = time_matrix_all[o2_idx][shacho_idx]
 
+    # ============================================
+    # きたえるーむがある場合、待機時間を事前計算して出発を遅らせる
+    # ============================================
+    kitaeroom_wait_adjustment = 0  # きたえるーむ待機による出発遅延（分）
+
+    # きたえるーむがルートにあるか確認
+    has_kitaeroom = False
+    kitaeroom_position = -1
+    for idx, visit_idx in enumerate(filtered_visit_indices):
+        if name_col:
+            pname = visit_df.iloc[visit_idx][name_col]
+        else:
+            pname = f"訪問先{visit_idx + 1}"
+        if is_kitaeroom(pname):
+            has_kitaeroom = True
+            kitaeroom_position = idx
+            break
+
+    if has_kitaeroom:
+        # きたえるーむまでの所要時間をシミュレーション
+        sim_min_departure = datetime.combine(datetime.today(),
+                                             datetime.strptime(DEPARTURE_MIN_TIME, "%H:%M").time())
+        sim_total_travel = o2_to_shacho_time + SHACHO_HOME["stay_min"] * 60 + shacho_to_first_time
+        sim_first_arrival = sim_min_departure + timedelta(seconds=sim_total_travel)
+
+        # 8:00より早い場合は8:00に調整
+        sim_min_arrival = datetime.combine(datetime.today(),
+                                           datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
+        if sim_first_arrival < sim_min_arrival:
+            sim_first_arrival = sim_min_arrival
+
+        # きたえるーむまでの時間を計算
+        sim_time = sim_first_arrival
+        prev_matrix_idx = shacho_idx
+        for idx, visit_idx in enumerate(filtered_visit_indices):
+            if name_col:
+                pname = visit_df.iloc[visit_idx][name_col]
+            else:
+                pname = f"訪問先{visit_idx + 1}"
+            player = visit_df.iloc[visit_idx].get("layer", None) if "layer" in visit_df.columns else None
+            pdesc = visit_df.iloc[visit_idx].get("description", None) if "description" in visit_df.columns else None
+            pstay = get_stay_duration(pname, player, pdesc)
+
+            visit_matrix_idx = visit_idx + 2
+            if idx == 0:
+                # 最初の訪問先は打ち合わせ10分を加算
+                sim_time = sim_time + timedelta(minutes=MEETING_DURATION + pstay)
+            else:
+                travel = time_matrix_all[prev_matrix_idx][visit_matrix_idx]
+                sim_time = sim_time + timedelta(seconds=travel) + timedelta(minutes=pstay)
+
+            prev_matrix_idx = visit_matrix_idx
+
+            if is_kitaeroom(pname):
+                # きたえるーむに到着する予定時刻
+                # この時点でsim_timeはきたえるーむ出発時刻なので、到着時刻は滞在分戻す
+                kitaeroom_arrival_sim = sim_time - timedelta(minutes=pstay)
+                kitaeroom_target = datetime.combine(datetime.today(), datetime.strptime("17:00", "%H:%M").time())
+
+                if kitaeroom_arrival_sim < kitaeroom_target:
+                    # 待機時間がある場合、その分出発を遅らせる
+                    wait_diff = (kitaeroom_target - kitaeroom_arrival_sim).total_seconds() / 60
+                    kitaeroom_wait_adjustment = int(wait_diff)
+                break
+
+    # 出発時刻を7:00以降で計算し、到着時刻を算出
+    min_departure = datetime.combine(datetime.today(),
+                                     datetime.strptime(DEPARTURE_MIN_TIME, "%H:%M").time())
+    min_arrival = datetime.combine(datetime.today(),
+                                   datetime.strptime(FIRST_VISIT_MIN_ARRIVAL_TIME, "%H:%M").time())
+
+    # きたえるーむ待機時間を考慮して出発を遅らせる
+    adjusted_departure = min_departure + timedelta(minutes=kitaeroom_wait_adjustment)
+
+    # 調整後の出発時刻で到着時刻を計算
+    total_travel_to_first = o2_to_shacho_time + SHACHO_HOME["stay_min"] * 60 + shacho_to_first_time
+    calculated_arrival = adjusted_departure + timedelta(seconds=total_travel_to_first)
+
+    # 到着時刻が8:00より早い場合は8:00に調整（出発時刻を遅らせる）
+    if calculated_arrival < min_arrival:
+        first_visit_arrival = min_arrival
+    else:
+        first_visit_arrival = calculated_arrival
+
+    # 逆算して出発時刻を計算
     shacho_departure = first_visit_arrival - timedelta(seconds=shacho_to_first_time)
     shacho_arrival = shacho_departure - timedelta(minutes=SHACHO_HOME["stay_min"])
     o2_departure = shacho_arrival - timedelta(seconds=o2_to_shacho_time)
@@ -1651,8 +1782,8 @@ def create_day_timetable(day_num, visit_indices, visit_df, time_matrix_all,
 
         if is_first_regular:
             # 最初の通常訪問先の場合（きたえるーむでも適用後の時刻で処理）
-            # 打ち合わせは事務所のみで行う（現場のみの場合はスキップ）
-            should_have_meeting = is_office_location(point_name)
+            # 打ち合わせ可能な場所かどうかを判定（発注先レイヤーは打ち合わせ不可）
+            should_have_meeting = can_have_meeting(point_name, layer)
 
             # 待機時間を合算（きたえるーむ待機 + 昼休み待機）
             total_wait = wait_minutes + lunch_break_wait
@@ -1907,7 +2038,7 @@ st.sidebar.info(f"""
 ↓
 🏠 {SHACHO_HOME['name']}（ピックアップ）
 ↓
-📍 訪問先1件目（{FIRST_VISIT_ARRIVAL_TIME}着）
+📍 訪問先1件目（{FIRST_VISIT_MIN_ARRIVAL_TIME}以降着）
 ↓
 📍 訪問先2件目〜
 ↓
@@ -2352,7 +2483,8 @@ if map_df is not None and len(map_df) > 0:
                 )
             elif start_time.hour < 7:
                 advices_warning.append(
-                    f"**【早めの出発】** 出発が **{format_time(start_time)}** です。"
+                    f"**【早めの出発】** 出発が **{format_time(start_time)}** です。\n\n"
+                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
 
             # 終了時刻チェック
@@ -2363,8 +2495,20 @@ if map_df is not None and len(map_df) > 0:
                 )
             elif end_time.hour >= 18:
                 advices_warning.append(
-                    f"**【帰りが遅め】** 終了が **{format_time(end_time)}** です。"
+                    f"**【帰りが遅め】** 終了が **{format_time(end_time)}** です。\n\n"
+                    f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
+
+            # 待機時間チェック（60分以上で警告）
+            if "待機時間(分)" in timetable_df.columns:
+                for _, row in timetable_df.iterrows():
+                    wait_time = row.get("待機時間(分)", 0)
+                    if wait_time >= 60:
+                        location_name = row.get("場所名", "不明")
+                        advices_warning.append(
+                            f"**【待機時間】** 「{location_name}」の前に **{int(wait_time)}分** の待機があります。\n\n"
+                            f"👉 O2本社・藤沢倉庫の挿入やきたえるーむ17:00固定の影響です。訪問先の調整で改善できる場合があります。"
+                        )
 
             # アドバイスを目立つボックスで表示
             if advices_critical:

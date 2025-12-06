@@ -2536,8 +2536,10 @@ if map_df is not None and len(map_df) > 0:
         st.info("ドラッグ＆ドロップで訪問先を別の日に移動したり、順序を変更できます。変更後「スケジュールを適用」ボタンを押してください。")
 
         # 各日の訪問先名とインデックスのマッピングを作成
+        # きたえるーむは固定のため、ドラッグ＆ドロップリストから除外
         global_name_to_idx = {}
         multi_container_items = []  # list[dict] 形式
+        kitaeroom_info = {}  # きたえるーむがどの日のどのインデックスにあるか記録
 
         for day_idx in range(result_num_days):
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
@@ -2547,10 +2549,22 @@ if map_df is not None and len(map_df) > 0:
                     name = result_selected_df.iloc[idx][result_name_col]
                 else:
                     name = f"訪問先{idx + 1}"
+
+                # きたえるーむは固定なのでリストに含めない
+                if is_kitaeroom(name):
+                    kitaeroom_info[day_idx] = {"name": name, "idx": idx}
+                    continue
+
                 day_items.append(name)
                 global_name_to_idx[name] = idx
+
+            # きたえるーむがある日は固定表示を追加
+            header_text = f"{day_idx + 1}日目"
+            if day_idx in kitaeroom_info:
+                header_text += " （🏠きたえるーむ 17:00固定）"
+
             multi_container_items.append({
-                "header": f"{day_idx + 1}日目",
+                "header": header_text,
                 "items": day_items
             })
 
@@ -2567,31 +2581,17 @@ if map_df is not None and len(map_df) > 0:
         if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
             # 新しいday_routesを構築
             new_day_routes = []
-            kitaeroom_adjusted = False
 
             for day_idx in range(result_num_days):
                 day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
                 day_names = day_data.get("items", [])
                 day_indices = [global_name_to_idx[name] for name in day_names if name in global_name_to_idx]
 
-                # きたえるーむが含まれている場合、最後に移動
-                kitaeroom_pos = None
-                for i, idx in enumerate(day_indices):
-                    if result_name_col and idx < len(result_selected_df):
-                        name = result_selected_df.iloc[idx][result_name_col]
-                        if is_kitaeroom(name):
-                            kitaeroom_pos = i
-                            break
-
-                if kitaeroom_pos is not None and kitaeroom_pos != len(day_indices) - 1:
-                    kitaeroom_item = day_indices.pop(kitaeroom_pos)
-                    day_indices.append(kitaeroom_item)
-                    kitaeroom_adjusted = True
+                # きたえるーむを最後に追加（元の日程に固定）
+                if day_idx in kitaeroom_info:
+                    day_indices.append(kitaeroom_info[day_idx]["idx"])
 
                 new_day_routes.append(day_indices)
-
-            if kitaeroom_adjusted:
-                st.info("きたえるーむは17:00固定のため、最後に配置しました。")
 
             # session_state を更新
             st.session_state.route_result["day_routes"] = new_day_routes

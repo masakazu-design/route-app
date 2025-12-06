@@ -2561,12 +2561,11 @@ if map_df is not None and len(map_df) > 0:
         st.info("ドラッグ＆ドロップで訪問先を別の日に移動したり、順序を変更できます。変更後「スケジュールを適用」ボタンを押してください。")
 
         # 各日の訪問先名とインデックスのマッピングを作成
-        # きたえるーむも移動可能だが、常に最後に17:00固定で配置
         global_name_to_idx = {}
-        multi_container_items = []  # list[dict] 形式
-        kitaeroom_idx = None  # きたえるーむのインデックス
-        kitaeroom_name = None  # きたえるーむの名前
-        has_any_items = False  # 訪問先があるかどうか
+        multi_container_items = []
+        kitaeroom_idx = None
+        kitaeroom_name = None
+        total_items = 0
 
         for day_idx in range(result_num_days):
             visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
@@ -2585,65 +2584,109 @@ if map_df is not None and len(map_df) > 0:
                 else:
                     display_name = name
 
-                day_items.append(display_name)
-                global_name_to_idx[display_name] = idx
-                has_any_items = True
+                # 重複防止のためインデックスを付加
+                unique_display = f"{display_name}"
+                day_items.append(unique_display)
+                global_name_to_idx[unique_display] = idx
+                total_items += 1
 
             multi_container_items.append({
                 "header": f"{day_idx + 1}日目",
                 "items": day_items
             })
 
-        # 訪問先がない場合はドラッグ＆ドロップを表示しない
-        if not has_any_items:
+        # 訪問先がある場合のみドラッグ＆ドロップを表示
+        if total_items == 0:
             st.warning("訪問先がありません。スケジュール作成を行ってください。")
         else:
-            # マルチコンテナでドラッグ＆ドロップ（日程間移動対応）
-            sorted_multi = sort_items(multi_container_items, multi_containers=True, key="multi_day_sort")
+            # ドラッグ＆ドロップUI
+            try:
+                # ユニークなキーを生成（day_routesの内容に基づく）
+                key_hash = hash(str(day_routes))
+                sorted_multi = sort_items(
+                    multi_container_items,
+                    multi_containers=True,
+                    key=f"sortable_{key_hash}"
+                )
 
-            # 変更があったかチェック
-            schedule_changed = sorted_multi != multi_container_items
+                # 変更があったかチェック
+                schedule_changed = False
+                for i, container in enumerate(sorted_multi):
+                    if i < len(multi_container_items):
+                        if container.get("items", []) != multi_container_items[i].get("items", []):
+                            schedule_changed = True
+                            break
 
-            if schedule_changed:
-                st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
+                if schedule_changed:
+                    st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
 
-            # きたえるーむの注意表示
-            if kitaeroom_name:
-                st.caption("💡 きたえるーむは別の日に移動できますが、常にその日の最後に17:00固定で訪問します。")
+                # きたえるーむの注意表示
+                if kitaeroom_name:
+                    st.caption("💡 きたえるーむは別の日に移動できますが、常にその日の最後に17:00固定で訪問します。")
 
-            # スケジュール適用ボタン
-            if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
-                # 新しいday_routesを構築
-                new_day_routes = []
+                # スケジュール適用ボタン
+                if st.button("✅ スケジュールを適用", key="btn_apply_schedule", use_container_width=True):
+                    new_day_routes = []
 
+                    for day_idx in range(result_num_days):
+                        day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
+                        day_names = day_data.get("items", [])
+
+                        day_indices = []
+                        kitaeroom_in_this_day = False
+                        for display_name in day_names:
+                            if display_name in global_name_to_idx:
+                                idx = global_name_to_idx[display_name]
+                                if result_name_col and idx < len(result_selected_df):
+                                    actual_name = result_selected_df.iloc[idx][result_name_col]
+                                    if is_kitaeroom(actual_name):
+                                        kitaeroom_in_this_day = True
+                                        continue
+                                day_indices.append(idx)
+
+                        # きたえるーむをこの日の最後に追加
+                        if kitaeroom_in_this_day and kitaeroom_idx is not None:
+                            day_indices.append(kitaeroom_idx)
+
+                        new_day_routes.append(day_indices)
+
+                    st.session_state.route_result["day_routes"] = new_day_routes
+                    st.success("✅ スケジュールを更新しました！")
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"ドラッグ＆ドロップの表示でエラーが発生しました: {e}")
+                st.info("代わりにセレクトボックスで調整してください。")
+
+                # フォールバック: セレクトボックスUI
+                all_visit_options = []
                 for day_idx in range(result_num_days):
-                    day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
-                    day_names = day_data.get("items", [])
+                    visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
+                    for idx in visit_indices:
+                        if result_name_col and idx < len(result_selected_df):
+                            name = result_selected_df.iloc[idx][result_name_col]
+                        else:
+                            name = f"訪問先{idx + 1}"
+                        display_name = f"{name}（{day_idx + 1}日目）"
+                        all_visit_options.append((display_name, idx, day_idx, name))
 
-                    # きたえるーむを除いた訪問先リスト
-                    day_indices = []
-                    kitaeroom_in_this_day = False
-                    for display_name in day_names:
-                        if display_name in global_name_to_idx:
-                            idx = global_name_to_idx[display_name]
-                            # きたえるーむかどうかチェック
-                            if result_name_col and idx < len(result_selected_df):
-                                actual_name = result_selected_df.iloc[idx][result_name_col]
-                                if is_kitaeroom(actual_name):
-                                    kitaeroom_in_this_day = True
-                                    continue  # 一旦スキップ、後で最後に追加
-                            day_indices.append(idx)
+                if all_visit_options:
+                    move_options = [opt[0] for opt in all_visit_options]
+                    selected_visit = st.selectbox("移動する訪問先", options=move_options, key="fallback_select")
 
-                    # きたえるーむをこの日の最後に追加
-                    if kitaeroom_in_this_day and kitaeroom_idx is not None:
-                        day_indices.append(kitaeroom_idx)
+                    selected_info = next((opt for opt in all_visit_options if opt[0] == selected_visit), None)
+                    if selected_info:
+                        day_options = [f"{d + 1}日目" for d in range(result_num_days)]
+                        target_day = st.selectbox("移動先", options=day_options, index=selected_info[2], key="fallback_target")
+                        target_day_idx = day_options.index(target_day)
 
-                    new_day_routes.append(day_indices)
-
-                # session_state を更新
-                st.session_state.route_result["day_routes"] = new_day_routes
-                st.success("✅ スケジュールを更新しました！")
-                st.rerun()
+                        if st.button("📦 移動", key="fallback_move"):
+                            if target_day_idx != selected_info[2]:
+                                new_routes = [list(r) for r in day_routes]
+                                new_routes[selected_info[2]].remove(selected_info[1])
+                                new_routes[target_day_idx].append(selected_info[1])
+                                st.session_state.route_result["day_routes"] = new_routes
+                                st.rerun()
 
         # リセットボタン
         st.markdown("---")

@@ -2042,12 +2042,24 @@ st.sidebar.header("⚙️ 設定")
 st.sidebar.subheader("🗓️ 日程設定")
 num_days = st.sidebar.number_input("確保する日数", value=2, min_value=1, max_value=10, step=1)
 
-# 帰宅希望時刻（任意）
+# 帰宅希望時刻（日別・任意）
 use_return_deadline = st.sidebar.checkbox("帰宅希望時刻を設定", value=False)
+return_deadline_times = {}
 if use_return_deadline:
-    return_deadline_time = st.sidebar.time_input("帰宅希望時刻", value=datetime.strptime("17:00", "%H:%M").time())
-else:
-    return_deadline_time = None
+    for day_idx in range(int(num_days)):
+        day_num = day_idx + 1
+        col_check, col_time = st.sidebar.columns([1, 2])
+        with col_check:
+            use_this_day = st.checkbox(f"{day_num}日目", value=False, key=f"return_deadline_check_{day_idx}")
+        with col_time:
+            if use_this_day:
+                deadline_time = st.time_input(
+                    f"{day_num}日目",
+                    value=datetime.strptime("17:00", "%H:%M").time(),
+                    key=f"return_deadline_time_{day_idx}",
+                    label_visibility="collapsed"
+                )
+                return_deadline_times[day_num] = deadline_time
 
 st.sidebar.markdown("---")
 
@@ -2543,8 +2555,9 @@ if map_df is not None and len(map_df) > 0:
                     f"👉 一部の訪問先を他の日に移動することを検討してください。"
                 )
 
-            # 帰宅希望時刻チェック
-            if return_deadline_time is not None:
+            # 帰宅希望時刻チェック（日別）
+            if day_num in return_deadline_times:
+                return_deadline_time = return_deadline_times[day_num]
                 deadline_datetime = datetime.combine(datetime.today(), return_deadline_time)
                 if end_time > deadline_datetime:
                     over_minutes = int((end_time - deadline_datetime).total_seconds() / 60)

@@ -2975,7 +2975,7 @@ if map_df is not None and len(map_df) > 0:
                     icon=folium.DivIcon(html=f'<div style="font-size: 9pt; color: white; background-color: {color}; border-radius: 50%; width: 22px; height: 22px; text-align: center; line-height: 22px;">{order+1}</div>')
                 ).add_to(m)
 
-        st_folium(m, width=None, height=500, key="result_map")
+        st_folium(m, width=None, height=700, key="result_map")
 
         # 凡例
         st.write("**凡例:**")

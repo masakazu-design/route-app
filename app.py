@@ -2309,12 +2309,13 @@ if supabase_client:
                             "optimize_mode": sch_data.get('optimize_mode', 'distance'),
                             "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0] if len(loaded_df.columns) > 0 else None,
                             "timetables": sch_data.get('timetables'),
-                            "calendar_texts": sch_data.get('calendar_texts')
+                            "calendar_texts": sch_data.get('calendar_texts'),
+                            "needs_matrix_rebuild": True  # 読み込み時はマトリクス再構築が必要
                         }
                     # 選択状態を復元
                     if sch_data.get('selected_points'):
                         st.session_state.loaded_selection = sch_data
-                    st.sidebar.success(f"✅ 読み込みました")
+                    st.sidebar.success(f"✅ 読み込みました（マトリクス再構築中...）")
                     st.rerun()
         with col_del:
             if selected_sch and st.button("🗑️ 削除", key="btn_del_schedule", use_container_width=True):
@@ -2728,9 +2729,37 @@ if map_df is not None and len(map_df) > 0:
         if not result_point_names and result_name_col and result_name_col in result_selected_df.columns:
             result_point_names = result_selected_df[result_name_col].tolist()
 
+        # 読み込みデータでマトリクス再構築が必要な場合
+        if full_time_matrix is None and result.get("needs_matrix_rebuild"):
+            st.info("📂 保存データを読み込み中... マトリクスを再構築しています")
+            with st.spinner("距離・時間マトリクスを再計算中..."):
+                try:
+                    # 座標リストを取得
+                    coords_for_matrix = []
+                    for _, row in result_selected_df.iterrows():
+                        lat = row.get("lat") or row.get("latitude") or row.get("緯度")
+                        lng = row.get("lng") or row.get("lon") or row.get("longitude") or row.get("経度")
+                        if lat and lng:
+                            coords_for_matrix.append((float(lat), float(lng)))
+                        else:
+                            coords_for_matrix.append(None)
+
+                    # マトリクス計算
+                    if api_key and all(c is not None for c in coords_for_matrix):
+                        full_time_matrix, full_dist_matrix = create_distance_matrix_google_batched(coords_for_matrix, api_key)
+                        st.session_state.route_result["full_time_matrix"] = full_time_matrix
+                        st.session_state.route_result["full_dist_matrix"] = full_dist_matrix
+                        st.session_state.route_result["needs_matrix_rebuild"] = False
+                        st.session_state.route_result["selected_point_names"] = result_point_names
+                        st.rerun()
+                    else:
+                        st.warning("⚠️ 座標データまたはAPIキーが不足しているため、マトリクスを再構築できませんでした。")
+                except Exception as e:
+                    st.error(f"マトリクス再構築エラー: {e}")
+
         st.success(f"✅ {result_num_days}日間のルートが計算されました！")
 
-        # full_time_matrixがない場合（読み込みデータ）
+        # full_time_matrixがない場合（読み込みデータ・マトリクス再構築失敗時）
         if full_time_matrix is None:
             # 保存されているtimetablesとcalendar_textsがあれば表示
             saved_timetables = result.get("timetables")

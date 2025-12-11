@@ -602,7 +602,13 @@ def get_travel_time_bias():
 
 
 def create_distance_matrix_google_batched(locations_tuple, api_key, progress_callback=None):
-    """Google Maps Distance Matrix APIで所要時間行列を作成（バイアス適用）"""
+    """Google Maps Distance Matrix APIで所要時間行列と距離行列を作成（バイアス適用）
+
+    Returns:
+        time_matrix: 移動時間行列（秒）
+        dist_matrix: 距離行列（メートル）
+        error: エラーメッセージ（成功時はNone）
+    """
     try:
         import time as time_module
         gmaps = googlemaps.Client(key=api_key)
@@ -614,6 +620,7 @@ def create_distance_matrix_google_batched(locations_tuple, api_key, progress_cal
         bias = get_travel_time_bias()
 
         time_matrix = [[0] * n for _ in range(n)]
+        dist_matrix = [[0] * n for _ in range(n)]  # 距離行列を追加
         origin_chunks = [locations[i:i + CHUNK_SIZE] for i in range(0, n, CHUNK_SIZE)]
         dest_chunks = [locations[i:i + CHUNK_SIZE] for i in range(0, n, CHUNK_SIZE)]
 
@@ -648,16 +655,19 @@ def create_distance_matrix_google_batched(locations_tuple, api_key, progress_cal
                             # バイアスを適用した移動時間
                             raw_duration = element["duration"]["value"]
                             time_matrix[global_i][global_j] = int(raw_duration * bias)
+                            # 距離（メートル）
+                            dist_matrix[global_i][global_j] = element["distance"]["value"]
                         else:
                             time_matrix[global_i][global_j] = 999999
+                            dist_matrix[global_i][global_j] = 999999
 
                 if current_request < total_requests:
                     time_module.sleep(0.1)
 
-        return time_matrix, None
+        return time_matrix, dist_matrix, None
 
     except Exception as e:
-        return None, f"エラー: {str(e)}"
+        return None, None, f"エラー: {str(e)}"
 
 
 @st.cache_data
@@ -818,9 +828,21 @@ def solve_vrp_multi_day(time_matrix, num_days, depot_idx=0, stay_times=None):
         return routes, [0] * num_days
 
 
-def solve_tsp_optimal_order(time_matrix, depot_idx=0):
-    """TSPで最適な巡回順序を1本計算（燃費重視・最短距離優先）"""
-    n = len(time_matrix)
+def solve_tsp_optimal_order(time_matrix, depot_idx=0, cost_matrix=None):
+    """TSPで最適な巡回順序を1本計算
+
+    Args:
+        time_matrix: 移動時間行列（タイムテーブル計算に使用）
+        depot_idx: 出発地点のインデックス
+        cost_matrix: コスト行列（最適化に使用）。Noneの場合はtime_matrixを使用
+                    - 移動時間優先: time_matrixを渡す
+                    - 距離優先: dist_matrixを渡す
+    """
+    # cost_matrixが指定されていない場合はtime_matrixを使用
+    if cost_matrix is None:
+        cost_matrix = time_matrix
+
+    n = len(cost_matrix)
 
     if n <= 1:
         return []
@@ -834,7 +856,7 @@ def solve_tsp_optimal_order(time_matrix, depot_idx=0):
     def distance_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        return time_matrix[from_node][to_node]
+        return cost_matrix[from_node][to_node]
 
     transit_callback_index = routing.RegisterTransitCallback(distance_callback)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
@@ -890,7 +912,9 @@ def global_tsp_time_slice_allocation(
     name_col,
     num_days,
     daily_end_limit_hour=17,
-    daily_end_limit_minute=30
+    daily_end_limit_minute=30,
+    dist_matrix_all=None,
+    optimize_mode="time"
 ):
     """
     Global TSP & Time Slicing 方式（燃費重視・円形ルート対応）
@@ -913,6 +937,8 @@ def global_tsp_time_slice_allocation(
         num_days: 最大日数
         daily_end_limit_hour: 1日の終了時刻上限（時）
         daily_end_limit_minute: 1日の終了時刻上限（分）
+        dist_matrix_all: 距離行列（距離優先モード用）
+        optimize_mode: 最適化モード（"time"=移動時間優先、"distance"=距離優先）
 
     Returns:
         day_routes: 各日の訪問先インデックスリスト
@@ -984,11 +1010,12 @@ def global_tsp_time_slice_allocation(
         return [kitaeroom_indices] + [[] for _ in range(num_days - 1)]
 
     # ============================================
-    # Step 1: 代表点でGlobal TSP計算（燃費重視）
+    # Step 1: 代表点でGlobal TSP計算
     # ============================================
     # ローカル行列を作成（社長宅 + 代表点）
     local_size = 1 + len(representative_indices)
-    local_matrix = [[0] * local_size for _ in range(local_size)]
+    local_time_matrix = [[0] * local_size for _ in range(local_size)]
+    local_cost_matrix = [[0] * local_size for _ in range(local_size)]
 
     for i in range(local_size):
         for j in range(local_size):
@@ -1000,10 +1027,15 @@ def global_tsp_time_slice_allocation(
                 dest_full_idx = shacho_idx
             else:
                 dest_full_idx = representative_indices[j - 1] + 2
-            local_matrix[i][j] = time_matrix_all[orig_full_idx][dest_full_idx]
+            local_time_matrix[i][j] = time_matrix_all[orig_full_idx][dest_full_idx]
+            # 最適化モードに応じてコスト行列を設定
+            if optimize_mode == "distance" and dist_matrix_all is not None:
+                local_cost_matrix[i][j] = dist_matrix_all[orig_full_idx][dest_full_idx]
+            else:
+                local_cost_matrix[i][j] = time_matrix_all[orig_full_idx][dest_full_idx]
 
     # TSP計算（社長宅をデポとして）
-    tsp_result = solve_tsp_optimal_order(local_matrix, depot_idx=0)
+    tsp_result = solve_tsp_optimal_order(local_time_matrix, depot_idx=0, cost_matrix=local_cost_matrix)
 
     # ============================================
     # Step 2: TSP結果を展開（事務所→現場の順）
@@ -2377,6 +2409,15 @@ if map_df is not None and len(map_df) > 0:
 
     st.subheader("2️⃣ ルート最適化")
 
+    # 最適化モード選択
+    optimize_mode = st.radio(
+        "🔧 最適化モード",
+        options=["time", "distance"],
+        format_func=lambda x: "⏱️ 移動時間優先（到着時間を重視）" if x == "time" else "📏 距離優先（走行距離を重視）",
+        horizontal=True,
+        help="移動時間優先：渋滞・信号を考慮した最短時間ルート\n距離優先：純粋に走行距離が短いルート（燃費重視）"
+    )
+
     if len(selected_point_names) > 0 and st.button("🚀 最適ルートを計算する", type="primary", use_container_width=True):
         all_locations = [
             (O2_HONSHA["lat"], O2_HONSHA["lon"]),
@@ -2392,7 +2433,7 @@ if map_df is not None and len(map_df) > 0:
             progress_bar.progress(progress)
             status_text.text(message)
 
-        full_time_matrix, error = create_distance_matrix_google_batched(
+        full_time_matrix, full_dist_matrix, error = create_distance_matrix_google_batched(
             tuple(all_locations), api_key, progress_callback=update_progress
         )
 
@@ -2402,7 +2443,8 @@ if map_df is not None and len(map_df) > 0:
         if error:
             st.error(f"❌ Google APIエラー: {error}")
         elif full_time_matrix:
-            with st.spinner("Global TSP & Time Slicing で最適化中..."):
+            mode_label = "移動時間優先" if optimize_mode == "time" else "距離優先"
+            with st.spinner(f"Global TSP & Time Slicing で最適化中（{mode_label}）..."):
                 # 全体TSP → 時間による日程分割（地理的に近い場所は同じ日に）
                 day_routes_converted = global_tsp_time_slice_allocation(
                     visit_df=selected_df,
@@ -2410,7 +2452,9 @@ if map_df is not None and len(map_df) > 0:
                     o2_idx=0,
                     shacho_idx=1,
                     name_col=name_col,
-                    num_days=num_days
+                    num_days=num_days,
+                    dist_matrix_all=full_dist_matrix,
+                    optimize_mode=optimize_mode
                 )
 
                 # Gap Filling最適化：他の日からO2本社・藤沢倉庫を移動
@@ -2426,10 +2470,12 @@ if map_df is not None and len(map_df) > 0:
             st.session_state.route_result = {
                 "day_routes": day_routes_converted,
                 "full_time_matrix": full_time_matrix,
+                "full_dist_matrix": full_dist_matrix,
                 "selected_df": selected_df,
                 "selected_point_names": selected_point_names,
                 "name_col": name_col,
-                "num_days": num_days
+                "num_days": num_days,
+                "optimize_mode": optimize_mode
             }
 
     # ========================================
@@ -2791,7 +2837,9 @@ if map_df is not None and len(map_df) > 0:
         # リセットボタン
         st.markdown("---")
         if st.button("🔄 自動計算結果にリセット", key="btn_reset"):
-            # 再計算
+            # 再計算（保存された最適化モードを使用）
+            saved_optimize_mode = st.session_state.route_result.get("optimize_mode", "time")
+            saved_dist_matrix = st.session_state.route_result.get("full_dist_matrix")
             with st.spinner("ルートを再計算中..."):
                 day_routes_reset = global_tsp_time_slice_allocation(
                     visit_df=result_selected_df,
@@ -2799,7 +2847,9 @@ if map_df is not None and len(map_df) > 0:
                     o2_idx=0,
                     shacho_idx=1,
                     name_col=result_name_col,
-                    num_days=result_num_days
+                    num_days=result_num_days,
+                    dist_matrix_all=saved_dist_matrix,
+                    optimize_mode=saved_optimize_mode
                 )
                 # Gap Filling最適化：他の日からO2本社・藤沢倉庫を移動
                 day_routes_reset = optimize_gap_filling_moves(

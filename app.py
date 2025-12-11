@@ -3,6 +3,7 @@ import pandas as pd
 # numpy は現在未使用（K-Means廃止により）
 import re
 import math
+import json
 import folium
 import googlemaps
 import polyline
@@ -15,6 +16,13 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from datetime import datetime, timedelta
 # K-Meansクラスタリングは廃止（Global TSP & Time Slicing 方式に変更）
+
+# Supabase（オプション - 保存機能用）
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
 
 # ========================================
 # ページ設定（最初に配置する必要あり）
@@ -124,6 +132,157 @@ try:
 except Exception:
     DEFAULT_API_KEY = ""
     DEFAULT_MAP_ID = ""
+
+# Supabase設定
+def get_supabase_client():
+    """Supabaseクライアントを取得（設定がない場合はNone）"""
+    if not SUPABASE_AVAILABLE:
+        return None
+    try:
+        url = st.secrets.get("SUPABASE_URL", "")
+        key = st.secrets.get("SUPABASE_KEY", "")
+        if url and key:
+            return create_client(url, key)
+    except Exception:
+        pass
+    return None
+
+def save_selection(name, selected_points, num_days):
+    """訪問先の選択状態を保存"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return None, "Supabase未設定"
+    try:
+        data = {
+            "name": name,
+            "selected_points": selected_points,
+            "num_days": num_days
+        }
+        result = supabase.table("route_selections").insert(data).execute()
+        return result.data[0]["id"], None
+    except Exception as e:
+        return None, str(e)
+
+def load_selections():
+    """保存された選択状態一覧を取得"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return [], "Supabase未設定"
+    try:
+        result = supabase.table("route_selections").select("*").order("created_at", desc=True).limit(20).execute()
+        return result.data, None
+    except Exception as e:
+        return [], str(e)
+
+def load_selection_by_id(selection_id):
+    """IDで選択状態を取得"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return None, "Supabase未設定"
+    try:
+        result = supabase.table("route_selections").select("*").eq("id", selection_id).execute()
+        if result.data:
+            return result.data[0], None
+        return None, "データが見つかりません"
+    except Exception as e:
+        return None, str(e)
+
+def save_result(name, day_routes, timetables, calendar_texts, selected_df, num_days, optimize_mode, selection_id=None):
+    """計算結果を保存"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return None, "Supabase未設定"
+    try:
+        # DataFrameをJSONに変換
+        selected_df_json = selected_df.to_dict(orient="records")
+        data = {
+            "name": name,
+            "selection_id": selection_id,
+            "day_routes": day_routes,
+            "timetables": timetables,
+            "calendar_texts": calendar_texts,
+            "selected_df": selected_df_json,
+            "num_days": num_days,
+            "optimize_mode": optimize_mode
+        }
+        result = supabase.table("route_results").insert(data).execute()
+        return result.data[0]["id"], None
+    except Exception as e:
+        return None, str(e)
+
+def load_results():
+    """保存された計算結果一覧を取得"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return [], "Supabase未設定"
+    try:
+        result = supabase.table("route_results").select("*").order("created_at", desc=True).limit(20).execute()
+        return result.data, None
+    except Exception as e:
+        return [], str(e)
+
+def load_result_by_id(result_id):
+    """IDで計算結果を取得"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return None, "Supabase未設定"
+    try:
+        result = supabase.table("route_results").select("*").eq("id", result_id).execute()
+        if result.data:
+            return result.data[0], None
+        return None, "データが見つかりません"
+    except Exception as e:
+        return None, str(e)
+
+def save_history(execution_date, result_id, notes="", status="completed"):
+    """実行履歴を保存"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return None, "Supabase未設定"
+    try:
+        data = {
+            "execution_date": execution_date,
+            "result_id": result_id,
+            "actual_notes": notes,
+            "status": status
+        }
+        result = supabase.table("route_history").insert(data).execute()
+        return result.data[0]["id"], None
+    except Exception as e:
+        return None, str(e)
+
+def load_history():
+    """実行履歴一覧を取得"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return [], "Supabase未設定"
+    try:
+        result = supabase.table("route_history").select("*, route_results(name, num_days)").order("execution_date", desc=True).limit(50).execute()
+        return result.data, None
+    except Exception as e:
+        return [], str(e)
+
+def delete_selection(selection_id):
+    """選択状態を削除"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return False, "Supabase未設定"
+    try:
+        supabase.table("route_selections").delete().eq("id", selection_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+def delete_result(result_id):
+    """計算結果を削除"""
+    supabase = get_supabase_client()
+    if not supabase:
+        return False, "Supabase未設定"
+    try:
+        supabase.table("route_results").delete().eq("id", result_id).execute()
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # 稼働時間設定（固定）
 WORK_HOURS_PER_DAY = 8.0
@@ -2128,6 +2287,136 @@ st.sidebar.info(f"""
 ※ 定時: {WORK_HOURS_PER_DAY:.0f}時間/日
 """)
 
+# ========================================
+# 保存・読み込み機能（サイドバー）
+# ========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("💾 保存・読み込み")
+
+# Supabase接続確認
+supabase_client = get_supabase_client()
+if supabase_client:
+    st.sidebar.success("✅ データベース接続済み")
+
+    # タブで機能を分ける
+    save_tab, load_tab, history_tab = st.sidebar.tabs(["保存", "読込", "履歴"])
+
+    with save_tab:
+        # 選択状態の保存
+        st.markdown("**選択状態を保存**")
+        selection_name = st.text_input("保存名", placeholder="例：12月第2週", key="save_selection_name")
+        if st.button("📁 選択状態を保存", key="btn_save_selection", use_container_width=True):
+            # session_stateから選択状態を取得
+            current_selection = st.session_state.get("current_selected_points", [])
+            if selection_name and current_selection:
+                sel_id, err = save_selection(selection_name, current_selection, num_days)
+                if err:
+                    st.error(f"保存失敗: {err}")
+                else:
+                    st.success("保存しました")
+            else:
+                st.warning("保存名と訪問先を入力してください")
+
+        st.markdown("---")
+
+        # 計算結果の保存（結果がある場合のみ表示）
+        st.markdown("**計算結果を保存**")
+        result_name = st.text_input("保存名", placeholder="例：12月第2週ルート", key="save_result_name")
+        if st.button("📊 計算結果を保存", key="btn_save_result", use_container_width=True):
+            if result_name and st.session_state.route_result:
+                res = st.session_state.route_result
+                # タイムテーブルとカレンダーテキストを準備
+                timetables_json = None
+                calendar_texts_json = None
+                res_id, err = save_result(
+                    result_name,
+                    res.get("day_routes", []),
+                    timetables_json,
+                    calendar_texts_json,
+                    res.get("selected_df", pd.DataFrame()),
+                    res.get("num_days", 2),
+                    res.get("optimize_mode", "distance")
+                )
+                if err:
+                    st.error(f"保存失敗: {err}")
+                else:
+                    st.success("保存しました")
+            else:
+                st.warning("保存名を入力し、ルート計算を実行してください")
+
+    with load_tab:
+        # 選択状態の読み込み
+        st.markdown("**選択状態を読み込み**")
+        selections, err = load_selections()
+        if selections:
+            selection_options = {f"{s['name']} ({s['created_at'][:10]})": s['id'] for s in selections}
+            selected_sel = st.selectbox("選択", options=[""] + list(selection_options.keys()), key="load_selection")
+            if selected_sel and st.button("📂 読み込む", key="btn_load_selection", use_container_width=True):
+                sel_id = selection_options[selected_sel]
+                sel_data, err = load_selection_by_id(sel_id)
+                if sel_data:
+                    st.session_state.loaded_selection = sel_data
+                    st.success(f"読み込みました: {len(sel_data['selected_points'])}件")
+                    st.rerun()
+        else:
+            st.info("保存データがありません")
+
+        st.markdown("---")
+
+        # 計算結果の読み込み
+        st.markdown("**計算結果を読み込み**")
+        results, err = load_results()
+        if results:
+            result_options = {f"{r['name']} ({r['created_at'][:10]})": r['id'] for r in results}
+            selected_res = st.selectbox("選択", options=[""] + list(result_options.keys()), key="load_result")
+            if selected_res and st.button("📂 読み込む", key="btn_load_result", use_container_width=True):
+                res_id = result_options[selected_res]
+                res_data, err = load_result_by_id(res_id)
+                if res_data:
+                    # 結果を復元
+                    loaded_df = pd.DataFrame(res_data['selected_df'])
+                    st.session_state.route_result = {
+                        "day_routes": res_data['day_routes'],
+                        "selected_df": loaded_df,
+                        "num_days": res_data['num_days'],
+                        "optimize_mode": res_data.get('optimize_mode', 'distance'),
+                        "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0]
+                    }
+                    st.success("読み込みました")
+                    st.rerun()
+        else:
+            st.info("保存データがありません")
+
+    with history_tab:
+        st.markdown("**実行履歴**")
+        history, err = load_history()
+        if history:
+            for h in history[:10]:
+                result_info = h.get('route_results', {})
+                result_name = result_info.get('name', '不明') if result_info else '不明'
+                st.markdown(f"📅 **{h['execution_date']}** - {result_name}")
+                if h.get('actual_notes'):
+                    st.caption(f"メモ: {h['actual_notes']}")
+        else:
+            st.info("履歴がありません")
+
+        st.markdown("---")
+        st.markdown("**履歴を記録**")
+        exec_date = st.date_input("実行日", key="history_date")
+        exec_notes = st.text_area("メモ", placeholder="変更点など", key="history_notes", height=80)
+        if st.button("📝 履歴を記録", key="btn_save_history", use_container_width=True):
+            if st.session_state.route_result:
+                # まず結果を保存してから履歴に紐付け
+                h_id, err = save_history(str(exec_date), None, exec_notes)
+                if err:
+                    st.error(f"保存失敗: {err}")
+                else:
+                    st.success("履歴を記録しました")
+
+else:
+    st.sidebar.info("💡 Supabase設定で保存機能が有効になります")
+    st.sidebar.caption("secrets.tomlにSUPABASE_URLとSUPABASE_KEYを設定してください")
+
 # API設定（固定値使用）
 api_key = DEFAULT_API_KEY
 
@@ -2291,6 +2580,9 @@ if map_df is not None and len(map_df) > 0:
     else:
         selected_df = pd.DataFrame()
         selected_point_names = []
+
+    # 選択状態をsession_stateに保存（保存機能用）
+    st.session_state.current_selected_points = selected_point_names
 
     # ========================================
     # 訪問先手動追加UI

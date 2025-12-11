@@ -2315,6 +2315,7 @@ if supabase_client:
                     # 選択状態を復元
                     if sch_data.get('selected_points'):
                         st.session_state.loaded_selection = sch_data
+                        st.session_state.restore_selection_pending = True  # 選択復元フラグ
                     st.sidebar.success(f"✅ 読み込みました（マトリクス再構築中...）")
                     st.rerun()
         with col_del:
@@ -2498,12 +2499,26 @@ if map_df is not None and len(map_df) > 0:
                     options.append(display_name)
                     option_to_name[display_name] = point_name
 
-                # multiselect（初期値は空）
+                # 読み込みデータからデフォルト選択を設定
+                multiselect_key = f"multiselect_{layer_key}"
+
+                # 復元フラグがある場合のみ選択状態を復元
+                if st.session_state.get("restore_selection_pending"):
+                    loaded_selection = st.session_state.get("loaded_selection")
+                    if loaded_selection and loaded_selection.get("selected_points"):
+                        loaded_points = loaded_selection["selected_points"]
+                        default_selection = []
+                        for display_name, point_name in option_to_name.items():
+                            if point_name in loaded_points:
+                                default_selection.append(display_name)
+                        if default_selection:
+                            st.session_state[multiselect_key] = default_selection
+
+                # multiselect
                 selected_display_names = st.multiselect(
                     "訪問する場所:",
                     options=options,
-                    default=[],
-                    key=f"multiselect_{layer_key}"
+                    key=multiselect_key
                 )
 
                 # 選択された行を抽出
@@ -2524,6 +2539,11 @@ if map_df is not None and len(map_df) > 0:
 
     # 選択状態をsession_stateに保存（保存機能用）
     st.session_state.current_selected_points = selected_point_names
+
+    # 復元フラグがある場合、選択状態を設定後に再実行してUIに反映
+    if st.session_state.get("restore_selection_pending"):
+        st.session_state.restore_selection_pending = False
+        st.rerun()
 
     # ========================================
     # 訪問先手動追加UI
@@ -2734,8 +2754,11 @@ if map_df is not None and len(map_df) > 0:
             st.info("📂 保存データを読み込み中... マトリクスを再構築しています")
             with st.spinner("距離・時間マトリクスを再計算中..."):
                 try:
-                    # 座標リストを取得
-                    coords_for_matrix = []
+                    # 座標リストを取得（O2本社と社長宅を先頭に追加）
+                    coords_for_matrix = [
+                        (O2_HONSHA["lat"], O2_HONSHA["lon"]),  # index 0: O2本社
+                        (SHACHO_HOME["lat"], SHACHO_HOME["lon"]),  # index 1: 社長宅
+                    ]
                     for _, row in result_selected_df.iterrows():
                         lat = row.get("lat") or row.get("latitude") or row.get("緯度")
                         lng = row.get("lng") or row.get("lon") or row.get("longitude") or row.get("経度")
@@ -2746,12 +2769,18 @@ if map_df is not None and len(map_df) > 0:
 
                     # マトリクス計算
                     if api_key and all(c is not None for c in coords_for_matrix):
-                        full_time_matrix, full_dist_matrix = create_distance_matrix_google_batched(coords_for_matrix, api_key)
-                        st.session_state.route_result["full_time_matrix"] = full_time_matrix
-                        st.session_state.route_result["full_dist_matrix"] = full_dist_matrix
-                        st.session_state.route_result["needs_matrix_rebuild"] = False
-                        st.session_state.route_result["selected_point_names"] = result_point_names
-                        st.rerun()
+                        full_time_matrix, full_dist_matrix, matrix_error = create_distance_matrix_google_batched(coords_for_matrix, api_key)
+                        if matrix_error:
+                            st.error(f"マトリクス計算エラー: {matrix_error}")
+                        elif full_time_matrix:
+                            st.session_state.route_result["full_time_matrix"] = full_time_matrix
+                            st.session_state.route_result["full_dist_matrix"] = full_dist_matrix
+                            st.session_state.route_result["needs_matrix_rebuild"] = False
+                            st.session_state.route_result["selected_point_names"] = result_point_names
+                            # 古いtimetablesをクリアして再計算させる
+                            st.session_state.route_result["timetables"] = None
+                            st.session_state.route_result["calendar_texts"] = None
+                            st.rerun()
                     else:
                         st.warning("⚠️ 座標データまたはAPIキーが不足しているため、マトリクスを再構築できませんでした。")
                 except Exception as e:

@@ -2785,7 +2785,6 @@ if map_df is not None and len(map_df) > 0:
                     with st.expander(f"📅 {day_idx + 1}日目", expanded=True):
                         st.code(cal_text, language=None)
 
-                st.info("💡 手動調整を行うには「最適ルート計算する」ボタンを押してください。")
             else:
                 st.warning("⚠️ 保存データから読み込みました。詳細なタイムテーブルを表示するには「最適ルート計算する」ボタンを押してください。")
 
@@ -2799,7 +2798,45 @@ if map_df is not None and len(map_df) > 0:
                                 point_name = result_selected_df.iloc[v_idx][result_name_col] if result_name_col else f"地点{v_idx+1}"
                                 st.markdown(f"{i+1}. {point_name}")
 
-                st.info("💡 「最適ルート計算する」ボタンを押すと、詳細なタイムテーブルと手動調整機能が利用できます。")
+            # 手動調整UI（読み込みデータ用・簡易版）
+            st.markdown("---")
+            st.subheader("🛠️ スケジュール手動調整")
+            st.info("訪問先を別の日に移動できます。変更後は「最適ルート計算する」ボタンでタイムテーブルを再計算してください。")
+
+            # セレクトボックスUIで手動調整
+            all_visit_options_loaded = []
+            for day_idx in range(result_num_days):
+                visit_indices = day_routes[day_idx] if day_idx < len(day_routes) else []
+                for idx in visit_indices:
+                    if result_name_col and idx < len(result_selected_df):
+                        name = result_selected_df.iloc[idx][result_name_col]
+                    else:
+                        name = f"訪問先{idx + 1}"
+                    display_name = f"{name}（{day_idx + 1}日目）"
+                    all_visit_options_loaded.append((display_name, idx, day_idx, name))
+
+            if all_visit_options_loaded:
+                move_options_loaded = [opt[0] for opt in all_visit_options_loaded]
+                selected_visit_loaded = st.selectbox("移動する訪問先", options=move_options_loaded, key="loaded_select")
+
+                selected_info_loaded = next((opt for opt in all_visit_options_loaded if opt[0] == selected_visit_loaded), None)
+                if selected_info_loaded:
+                    day_options_loaded = [f"{d + 1}日目" for d in range(result_num_days)]
+                    target_day_loaded = st.selectbox("移動先", options=day_options_loaded, index=selected_info_loaded[2], key="loaded_target")
+                    target_day_idx_loaded = day_options_loaded.index(target_day_loaded)
+
+                    if st.button("📦 移動", key="loaded_move"):
+                        if target_day_idx_loaded != selected_info_loaded[2]:
+                            new_routes_loaded = [list(r) for r in day_routes]
+                            new_routes_loaded[selected_info_loaded[2]].remove(selected_info_loaded[1])
+                            new_routes_loaded[target_day_idx_loaded].append(selected_info_loaded[1])
+                            st.session_state.route_result["day_routes"] = new_routes_loaded
+                            # タイムテーブルは無効化
+                            st.session_state.route_result["timetables"] = None
+                            st.session_state.route_result["calendar_texts"] = None
+                            st.rerun()
+
+            st.info("💡 変更後は「最適ルート計算する」ボタンを押すと、タイムテーブルが再計算されます。")
 
             # full_time_matrixがない場合はここで表示を終了
             st.stop()
@@ -3123,6 +3160,9 @@ if map_df is not None and len(map_df) > 0:
                         new_day_routes.append(day_indices)
 
                     st.session_state.route_result["day_routes"] = new_day_routes
+                    # タイムテーブルは次のrerun時に再計算されるので、一旦クリア
+                    st.session_state.route_result["timetables"] = None
+                    st.session_state.route_result["calendar_texts"] = None
                     st.success("✅ スケジュールを更新しました！")
                     st.rerun()
 
@@ -3158,6 +3198,9 @@ if map_df is not None and len(map_df) > 0:
                                 new_routes[selected_info[2]].remove(selected_info[1])
                                 new_routes[target_day_idx].append(selected_info[1])
                                 st.session_state.route_result["day_routes"] = new_routes
+                                # タイムテーブルは次のrerun時に再計算されるので、一旦クリア
+                                st.session_state.route_result["timetables"] = None
+                                st.session_state.route_result["calendar_texts"] = None
                                 st.rerun()
 
         # リセットボタン
@@ -3187,6 +3230,9 @@ if map_df is not None and len(map_df) > 0:
                     name_col=result_name_col
                 )
             st.session_state.route_result["day_routes"] = day_routes_reset
+            # タイムテーブルは次のrerun時に再計算されるので、一旦クリア
+            st.session_state.route_result["timetables"] = None
+            st.session_state.route_result["calendar_texts"] = None
             st.rerun()
 
         # カレンダー用テキスト出力 + CSVダウンロード（コンパクト）

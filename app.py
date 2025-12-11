@@ -2344,40 +2344,37 @@ if supabase_client:
         schedule_options = {f"{s['name']} ({s['created_at'][:10]})": s['id'] for s in schedules}
         selected_sch = st.sidebar.selectbox("選択", options=[""] + list(schedule_options.keys()), key="load_schedule")
 
-        col_load, col_del = st.sidebar.columns(2)
-        with col_load:
-            if selected_sch and st.button("📂 読込", key="btn_load_schedule", use_container_width=True):
-                sch_id = schedule_options[selected_sch]
-                sch_data, err = load_schedule_by_id(sch_id)
-                if sch_data:
-                    # 計算結果があれば復元
-                    if sch_data.get('day_routes') and sch_data.get('selected_df'):
-                        loaded_df = pd.DataFrame(sch_data['selected_df'])
-                        st.session_state.route_result = {
-                            "day_routes": sch_data['day_routes'],
-                            "selected_df": loaded_df,
-                            "num_days": sch_data['num_days'],
-                            "optimize_mode": sch_data.get('optimize_mode', 'distance'),
-                            "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0] if len(loaded_df.columns) > 0 else None,
-                            "timetables": sch_data.get('timetables'),
-                            "calendar_texts": sch_data.get('calendar_texts'),
-                            "needs_matrix_rebuild": True  # 読み込み時はマトリクス再構築が必要
-                        }
-                    # 選択状態を復元
-                    if sch_data.get('selected_points'):
-                        st.session_state.loaded_selection = sch_data
-                        st.session_state.restore_selection_pending = True  # 選択復元フラグ
-                    st.sidebar.success(f"✅ 読み込みました（マトリクス再構築中...）")
-                    st.rerun()
-        with col_del:
-            if selected_sch and st.button("🗑️ 削除", key="btn_del_schedule", use_container_width=True):
-                sch_id = schedule_options[selected_sch]
-                success, err = delete_schedule(sch_id)
-                if success:
-                    st.sidebar.success("削除しました")
-                    st.rerun()
-                else:
-                    st.sidebar.error(f"削除失敗: {err}")
+        if selected_sch and st.sidebar.button("📂 読込", key="btn_load_schedule", use_container_width=True):
+            sch_id = schedule_options[selected_sch]
+            sch_data, err = load_schedule_by_id(sch_id)
+            if sch_data:
+                # 計算結果があれば復元
+                if sch_data.get('day_routes') and sch_data.get('selected_df'):
+                    loaded_df = pd.DataFrame(sch_data['selected_df'])
+                    st.session_state.route_result = {
+                        "day_routes": sch_data['day_routes'],
+                        "selected_df": loaded_df,
+                        "num_days": sch_data['num_days'],
+                        "optimize_mode": sch_data.get('optimize_mode', 'distance'),
+                        "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0] if len(loaded_df.columns) > 0 else None,
+                        "timetables": sch_data.get('timetables'),
+                        "calendar_texts": sch_data.get('calendar_texts'),
+                        "needs_matrix_rebuild": True  # 読み込み時はマトリクス再構築が必要
+                    }
+                # 選択状態を復元
+                if sch_data.get('selected_points'):
+                    st.session_state.loaded_selection = sch_data
+                    st.session_state.restore_selection_pending = True  # 選択復元フラグ
+                st.sidebar.success(f"✅ 読み込みました（マトリクス再構築中...）")
+                st.rerun()
+        if selected_sch and st.sidebar.button("🗑️ 削除", key="btn_del_schedule", use_container_width=True):
+            sch_id = schedule_options[selected_sch]
+            success, err = delete_schedule(sch_id)
+            if success:
+                st.sidebar.success("削除しました")
+                st.rerun()
+            else:
+                st.sidebar.error(f"削除失敗: {err}")
     else:
         st.sidebar.info("保存データがありません")
 

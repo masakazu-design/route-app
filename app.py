@@ -2254,11 +2254,59 @@ if supabase_client:
     # スケジュール保存
     st.sidebar.markdown("**📁 スケジュールを保存**")
     schedule_name = st.sidebar.text_input("保存名", placeholder="例：12月第2週", key="save_schedule_name")
+
+    # 保存処理（2段階：ボタン押下でフラグ立て → 次のrerunで実際に保存）
     if st.sidebar.button("💾 保存", key="btn_save_schedule", use_container_width=True):
+        if schedule_name:
+            st.session_state.save_pending = True
+            st.session_state.save_name_value = schedule_name  # ウィジェットキーと別の名前
+            st.rerun()
+        else:
+            st.sidebar.warning("保存名を入力してください")
+
+    # 保存フラグがある場合、実際に保存処理を実行
+    if st.session_state.get("save_pending"):
+        schedule_name_to_save = st.session_state.get("save_name_value", "")
         current_selection = st.session_state.get("current_selected_points", [])
         route_result = st.session_state.get("route_result")
 
-        if schedule_name and (current_selection or route_result):
+        if schedule_name_to_save and (current_selection or route_result):
+            # 未適用のドラッグ&ドロップ変更があれば自動適用
+            if st.session_state.get("pending_sorted_multi"):
+                sorted_multi = st.session_state.pending_sorted_multi
+                global_name_to_idx = st.session_state.get("pending_global_name_to_idx", {})
+                kitaeroom_idx = st.session_state.get("pending_kitaeroom_idx")
+                pending_num_days = st.session_state.get("pending_result_num_days", num_days)
+                pending_selected_df = st.session_state.get("pending_result_selected_df")
+                pending_name_col = st.session_state.get("pending_result_name_col")
+
+                # sorted_multiからday_routesを構築
+                new_day_routes = []
+                for day_idx in range(pending_num_days):
+                    day_data = sorted_multi[day_idx] if day_idx < len(sorted_multi) else {"items": []}
+                    day_names = day_data.get("items", [])
+                    day_indices = []
+                    kitaeroom_in_this_day = False
+                    for display_name in day_names:
+                        if display_name in global_name_to_idx:
+                            idx = global_name_to_idx[display_name]
+                            if pending_name_col and pending_selected_df is not None and idx < len(pending_selected_df):
+                                actual_name = pending_selected_df.iloc[idx][pending_name_col]
+                                if "きたえるーむ" in actual_name:
+                                    kitaeroom_in_this_day = True
+                                    continue
+                            day_indices.append(idx)
+                    if kitaeroom_in_this_day and kitaeroom_idx is not None:
+                        day_indices.append(kitaeroom_idx)
+                    new_day_routes.append(day_indices)
+
+                # route_resultを更新
+                if route_result:
+                    route_result["day_routes"] = new_day_routes
+                    route_result["timetables"] = None
+                    route_result["calendar_texts"] = None
+                    st.session_state.route_result = route_result
+
             # 計算結果があれば一緒に保存
             day_routes = route_result.get("day_routes") if route_result else None
             selected_df = route_result.get("selected_df") if route_result else None
@@ -2268,7 +2316,7 @@ if supabase_client:
             calendar_texts = route_result.get("calendar_texts") if route_result else None
 
             sch_id, err = save_schedule(
-                schedule_name,
+                schedule_name_to_save,
                 current_selection,
                 result_num_days,
                 day_routes,
@@ -2281,8 +2329,11 @@ if supabase_client:
                 st.sidebar.error(f"保存失敗: {err}")
             else:
                 st.sidebar.success("✅ 保存しました")
+            # フラグをクリア
+            st.session_state.save_pending = False
         else:
             st.sidebar.warning("保存名と訪問先を入力してください")
+            st.session_state.save_pending = False
 
     st.sidebar.markdown("---")
 
@@ -3186,6 +3237,14 @@ if map_df is not None and len(map_df) > 0:
 
                 if schedule_changed:
                     st.warning("⚠️ スケジュールが変更されています。「スケジュールを適用」ボタンを押して反映してください。")
+
+                # ドラッグ&ドロップの現在の状態をsession_stateに保存（保存時に自動適用するため）
+                st.session_state.pending_sorted_multi = sorted_multi
+                st.session_state.pending_global_name_to_idx = global_name_to_idx
+                st.session_state.pending_kitaeroom_idx = kitaeroom_idx
+                st.session_state.pending_result_num_days = result_num_days
+                st.session_state.pending_result_selected_df = result_selected_df
+                st.session_state.pending_result_name_col = result_name_col
 
                 # きたえるーむの注意表示
                 if kitaeroom_name:

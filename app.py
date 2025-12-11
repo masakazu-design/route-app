@@ -2409,14 +2409,8 @@ if map_df is not None and len(map_df) > 0:
 
     st.subheader("2️⃣ ルート最適化")
 
-    # 最適化モード選択
-    optimize_mode = st.radio(
-        "🔧 最適化モード",
-        options=["distance", "time"],
-        format_func=lambda x: "📏 距離優先（走行距離を重視）" if x == "distance" else "⏱️ 移動時間優先（到着時間を重視）",
-        horizontal=True,
-        help="距離優先：純粋に走行距離が短いルート（燃費重視）\n移動時間優先：渋滞・信号を考慮した最短時間ルート"
-    )
+    # 距離優先で固定
+    optimize_mode = "distance"
 
     if len(selected_point_names) > 0 and st.button("🚀 最適ルートを計算する", type="primary", use_container_width=True):
         all_locations = [

@@ -147,7 +147,7 @@ def get_supabase_client():
         pass
     return None
 
-def save_schedule(name, selected_points, num_days, day_routes=None, selected_df=None, optimize_mode="distance"):
+def save_schedule(name, selected_points, num_days, day_routes=None, selected_df=None, optimize_mode="distance", timetables=None, calendar_texts=None):
     """スケジュールを保存（選択状態＋計算結果を統合）"""
     supabase = get_supabase_client()
     if not supabase:
@@ -164,6 +164,10 @@ def save_schedule(name, selected_points, num_days, day_routes=None, selected_df=
             data["day_routes"] = day_routes
         if selected_df is not None:
             data["selected_df"] = selected_df.to_dict(orient="records") if hasattr(selected_df, 'to_dict') else selected_df
+        if timetables is not None:
+            data["timetables"] = timetables
+        if calendar_texts is not None:
+            data["calendar_texts"] = calendar_texts
 
         result = supabase.table("route_schedules").insert(data).execute()
         return result.data[0]["id"], None
@@ -2260,6 +2264,8 @@ if supabase_client:
             selected_df = route_result.get("selected_df") if route_result else None
             result_num_days = route_result.get("num_days", num_days) if route_result else num_days
             optimize_mode = route_result.get("optimize_mode", "distance") if route_result else "distance"
+            timetables = route_result.get("timetables") if route_result else None
+            calendar_texts = route_result.get("calendar_texts") if route_result else None
 
             sch_id, err = save_schedule(
                 schedule_name,
@@ -2267,7 +2273,9 @@ if supabase_client:
                 result_num_days,
                 day_routes,
                 selected_df,
-                optimize_mode
+                optimize_mode,
+                timetables,
+                calendar_texts
             )
             if err:
                 st.sidebar.error(f"保存失敗: {err}")
@@ -2299,7 +2307,9 @@ if supabase_client:
                             "selected_df": loaded_df,
                             "num_days": sch_data['num_days'],
                             "optimize_mode": sch_data.get('optimize_mode', 'distance'),
-                            "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0] if len(loaded_df.columns) > 0 else None
+                            "name_col": "name" if "name" in loaded_df.columns else loaded_df.columns[0] if len(loaded_df.columns) > 0 else None,
+                            "timetables": sch_data.get('timetables'),
+                            "calendar_texts": sch_data.get('calendar_texts')
                         }
                     # 選択状態を復元
                     if sch_data.get('selected_points'):
@@ -2720,21 +2730,77 @@ if map_df is not None and len(map_df) > 0:
 
         st.success(f"✅ {result_num_days}日間のルートが計算されました！")
 
-        # full_time_matrixがない場合（読み込みデータ）は簡易表示のみ
+        # full_time_matrixがない場合（読み込みデータ）
         if full_time_matrix is None:
-            st.warning("⚠️ 保存データから読み込みました。詳細なタイムテーブルを表示するには「最適ルート計算する」ボタンを押してください。")
+            # 保存されているtimetablesとcalendar_textsがあれば表示
+            saved_timetables = result.get("timetables")
+            saved_calendar_texts = result.get("calendar_texts")
 
-            # 訪問先リストのみ表示
-            st.subheader("📍 訪問先一覧（保存データ）")
-            for day_idx, visits in enumerate(day_routes):
-                day_num = day_idx + 1
-                with st.expander(f"**{day_num}日目** ({len(visits)}件)", expanded=True):
-                    for i, v_idx in enumerate(visits):
-                        if v_idx < len(result_selected_df):
-                            point_name = result_selected_df.iloc[v_idx][result_name_col] if result_name_col else f"地点{v_idx+1}"
-                            st.markdown(f"{i+1}. {point_name}")
+            if saved_timetables and saved_calendar_texts:
+                st.info("📂 保存データから読み込みました")
 
-            st.info("💡 「最適ルート計算する」ボタンを押すと、詳細なタイムテーブルと手動調整機能が利用できます。")
+                # サマリー計算
+                total_travel_seconds_all = 0
+                total_stay_minutes_all = 0
+                for tt in saved_timetables:
+                    total_travel_seconds_all += tt["metrics"]["total_travel_seconds"]
+                    total_stay_minutes_all += tt["metrics"]["total_stay_minutes"]
+
+                # メトリクス表示
+                st.subheader("📊 サマリー")
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("訪問件数", f"{len(result_point_names)}件")
+                with col2:
+                    st.metric("総移動時間", format_duration(total_travel_seconds_all))
+                with col3:
+                    st.metric("総滞在時間", f"{total_stay_minutes_all}分")
+                with col4:
+                    total_hours = (total_travel_seconds_all / 3600) + (total_stay_minutes_all / 60)
+                    st.metric("総所要時間", f"{total_hours:.1f}時間")
+
+                # 各日のタイムテーブル表示
+                for tt in saved_timetables:
+                    day_num = tt["day_num"]
+                    timetable_data = tt["timetable"]
+                    timetable_df = pd.DataFrame(timetable_data)
+
+                    st.subheader(f"📅 {day_num}日目")
+
+                    # 訪問先リスト
+                    if "場所名" in timetable_df.columns:
+                        visit_names = timetable_df["場所名"].tolist()
+                        st.write(f"**訪問先 ({len(visit_names)}件):** {' → '.join(visit_names)}")
+
+                    # タイムテーブル表示
+                    column_order = ["順番", "到着時刻", "出発時刻", "滞在時間(分)", "移動時間(分)", "待機時間(分)", "場所名", "備考"]
+                    existing_cols = [c for c in column_order if c in timetable_df.columns]
+                    if existing_cols:
+                        st.dataframe(timetable_df[existing_cols], use_container_width=True)
+
+                # カレンダー用テキスト
+                st.markdown("---")
+                st.subheader("📋 カレンダー用テキスト（コピー用）")
+                for day_idx, cal_text in enumerate(saved_calendar_texts):
+                    with st.expander(f"📅 {day_idx + 1}日目", expanded=True):
+                        st.code(cal_text, language=None)
+
+                st.info("💡 手動調整を行うには「最適ルート計算する」ボタンを押してください。")
+            else:
+                st.warning("⚠️ 保存データから読み込みました。詳細なタイムテーブルを表示するには「最適ルート計算する」ボタンを押してください。")
+
+                # 訪問先リストのみ表示
+                st.subheader("📍 訪問先一覧（保存データ）")
+                for day_idx, visits in enumerate(day_routes):
+                    day_num = day_idx + 1
+                    with st.expander(f"**{day_num}日目** ({len(visits)}件)", expanded=True):
+                        for i, v_idx in enumerate(visits):
+                            if v_idx < len(result_selected_df):
+                                point_name = result_selected_df.iloc[v_idx][result_name_col] if result_name_col else f"地点{v_idx+1}"
+                                st.markdown(f"{i+1}. {point_name}")
+
+                st.info("💡 「最適ルート計算する」ボタンを押すと、詳細なタイムテーブルと手動調整機能が利用できます。")
+
             # full_time_matrixがない場合はここで表示を終了
             st.stop()
 
@@ -2759,6 +2825,20 @@ if map_df is not None and len(map_df) > 0:
                 total_stay_minutes_all += metrics["total_stay_minutes"]
                 all_calendar_text.append(calendar_text)
                 all_timetables.append((day_num, timetable_df, metrics))
+
+        # タイムテーブルとカレンダーテキストをroute_resultに保存（後で保存機能で使用）
+        timetables_for_save = []
+        for day_num, timetable_df, metrics in all_timetables:
+            timetables_for_save.append({
+                "day_num": day_num,
+                "timetable": timetable_df.to_dict(orient="records"),
+                "metrics": {
+                    "total_travel_seconds": metrics["total_travel_seconds"],
+                    "total_stay_minutes": metrics["total_stay_minutes"]
+                }
+            })
+        st.session_state.route_result["timetables"] = timetables_for_save
+        st.session_state.route_result["calendar_texts"] = all_calendar_text
 
         # メトリクス表示
         st.subheader("📊 サマリー")

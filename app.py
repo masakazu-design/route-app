@@ -2701,14 +2701,44 @@ if map_df is not None and len(map_df) > 0:
     if st.session_state.route_result is not None:
         result = st.session_state.route_result
         day_routes = result["day_routes"]
-        full_time_matrix = result["full_time_matrix"]
+        full_time_matrix = result.get("full_time_matrix")  # 読み込み時はNoneの場合あり
         result_selected_df = result["selected_df"]
-        result_point_names = result["selected_point_names"]
-        result_name_col = result["name_col"]
+        result_point_names = result.get("selected_point_names", result_selected_df[result.get("name_col", "name")].tolist() if result.get("name_col") and result.get("name_col") in result_selected_df.columns else [])
+        result_name_col = result.get("name_col")
         result_num_days = result["num_days"]
+
+        # name_colが未設定の場合は推測
+        if not result_name_col and len(result_selected_df.columns) > 0:
+            if "name" in result_selected_df.columns:
+                result_name_col = "name"
+            else:
+                result_name_col = result_selected_df.columns[0]
+
+        # selected_point_namesが空の場合は再生成
+        if not result_point_names and result_name_col and result_name_col in result_selected_df.columns:
+            result_point_names = result_selected_df[result_name_col].tolist()
 
         st.success(f"✅ {result_num_days}日間のルートが計算されました！")
 
+        # full_time_matrixがない場合（読み込みデータ）は簡易表示のみ
+        if full_time_matrix is None:
+            st.warning("⚠️ 保存データから読み込みました。詳細なタイムテーブルを表示するには「最適ルート計算する」ボタンを押してください。")
+
+            # 訪問先リストのみ表示
+            st.subheader("📍 訪問先一覧（保存データ）")
+            for day_idx, visits in enumerate(day_routes):
+                day_num = day_idx + 1
+                with st.expander(f"**{day_num}日目** ({len(visits)}件)", expanded=True):
+                    for i, v_idx in enumerate(visits):
+                        if v_idx < len(result_selected_df):
+                            point_name = result_selected_df.iloc[v_idx][result_name_col] if result_name_col else f"地点{v_idx+1}"
+                            st.markdown(f"{i+1}. {point_name}")
+
+            st.info("💡 「最適ルート計算する」ボタンを押すと、詳細なタイムテーブルと手動調整機能が利用できます。")
+            # full_time_matrixがない場合はここで表示を終了
+            st.stop()
+
+        # 以下はfull_time_matrixがある場合のみ実行
         # メトリクス表示用の集計
         total_locations = len(result_point_names)
         total_travel_seconds_all = 0
